@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/workspace.sh"
+
+if [[ $# == 1 && $1 == help ]]; then
+    cat <<'HELP'
+Usage: pkg create <name>
+
+Create an empty package in the current workspace or its nearest parent.
+The package starts with bin/ and a DEBIAN/control template, and appears
+immediately in pkg ls. Existing packages are preserved and duplicates fail.
+
+Names must contain at least two characters, start with a lowercase letter
+or digit, and contain only lowercase letters, digits, +, -, or dots.
+The word help is reserved for displaying this help text.
+
+Defaults: version 0.0.0, architecture all, section utils, priority optional.
+Maintainer and description are placeholders for later CLI configuration.
+
+Example: pkg create hello
+Debug:   pkg --debug create hello
+HELP
+    exit 0
+fi
+
+pkg_debug command create
+if (( $# != 1 )); then
+    printf 'Usage: pkg create <name>\n' >&2
+    exit 2
+fi
+name=$1
+pkg_debug package.name "$name"
+if [[ ! $name =~ ^[a-z0-9][a-z0-9+.-]+$ ]]; then
+    pkg_debug package.name_valid false
+    printf 'pkg: invalid package name: %s\n' "$name" >&2
+    exit 2
+fi
+pkg_debug package.name_valid true
+
+if root=$(pkg_find_workspace); then
+    :
+else
+    status=$?
+    if (( status == 2 )); then
+        printf 'pkg: not a pkg workspace (no .pkg in this directory or its parents)\n' >&2
+    fi
+    exit 1
+fi
+
+packages="$root/.pkg/packages"
+pkg_debug packages.directory "$packages"
+if [[ ! -d $packages || -L $packages ]]; then
+    pkg_debug packages.storage invalid_or_missing
+    printf 'pkg: invalid package storage: %s\n' "$packages" >&2
+    exit 1
+fi
+pkg_debug packages.storage ready
+target="$packages/$name"
+pkg_debug package.target "$target"
+if [[ -e $target || -L $target ]]; then
+    pkg_debug package.exists true
+    printf 'pkg: package already exists: %s\n' "$name" >&2
+    exit 1
+fi
+pkg_debug package.exists false
+pkg_debug package.version 0.0.0
+pkg_debug package.architecture all
+pkg_debug package.metadata_complete false
+
+# Stage outside packages/ so ls only sees completed package definitions.
+staging=$(mktemp -d -- "$root/.pkg/.create.XXXXXXXX")
+cleanup() {
+    local status=$?
+    rm -rf -- "$staging"
+    if (( status != 0 )); then
+        pkg_debug create.result failed
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+mkdir -- "$staging/bin" "$staging/DEBIAN"
+cat > "$staging/DEBIAN/control" <<CONTROL
+Package: $name
+Version: 0.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: TODO <maintainer@example.invalid>
+Description: TODO package description
+CONTROL
+
+chmod 755 -- "$staging"
+# GNU mv's no-clobber operation also protects concurrent create attempts.
+mv -T -n -- "$staging" "$target"
+if [[ -d $staging ]]; then
+    pkg_debug package.exists true
+    printf 'pkg: package already exists: %s\n' "$name" >&2
+    exit 1
+fi
+pkg_debug create.result created
+printf 'Created package %s\n' "$name"
