@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( $# != 0 )); then
+    printf 'Usage: compile-pkg (run in the directory containing lib/)\n' >&2
+    exit 2
+fi
+
+if [[ ! -d lib ]]; then
+    printf 'compile-pkg: lib/ is missing from the current directory\n' >&2
+    exit 1
+fi
+
+destination=/exe
+mkdir -p -- "$destination"
+output=$(mktemp -- "$destination/.pkg-build.XXXXXXXX")
+trap 'rm -f -- "$output"' EXIT
+
+# The output starts with a Bash launcher, followed by a raw tar archive.
+cat > "$output" <<'LAUNCHER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ${1:-} == --debug ]]; then
+    export PKG_DEBUG=1
+    shift
+fi
+
+self=${BASH_SOURCE[0]}
+command_name=${1:-}
+if (( $# )); then
+    shift
+fi
+
+bundle=$(mktemp -d -- "${TMPDIR:-/tmp}/pkg.XXXXXXXX")
+trap 'rm -rf -- "$bundle"' EXIT
+
+# Skip the launcher and send the remaining bytes to tar.
+first_line=$(awk '/^__PKG_ARCHIVE__$/ { print NR + 1; exit }' < "$self")
+if [[ -z $first_line ]]; then
+    printf 'pkg: embedded archive is missing\n' >&2
+    exit 1
+fi
+tail -n "+$first_line" -- "$self" | tar -xf - -C "$bundle"
+
+case $command_name in
+    ''|help)
+        if (( $# > 1 )); then
+            printf 'Usage: pkg help [command]\n' >&2
+            exit 2
+        fi
+        if (( $# == 1 )); then
+            command_name=$1
+            set -- help
+        else
+            printf 'Usage: pkg [--debug] <command> [args...]\n       pkg help [command]\nCommands:\n'
+            for handler in "$bundle"/lib/pkg-*; do
+                [[ -f $handler && -x $handler ]] || continue
+                printf '  %s\n' "${handler##*/pkg-}"
+            done
+            exit 0
+        fi
+        ;;
+esac
+
+case $command_name in
+    ''|*/*|.*|-*)
+        printf 'pkg: invalid command: %s\n' "$command_name" >&2
+        exit 2
+        ;;
+esac
+
+handler="$bundle/lib/pkg-$command_name"
+if [[ ! -f $handler || ! -x $handler ]]; then
+    printf 'pkg: unknown or non-executable command: %s\n' "$command_name" >&2
+    exit 2
+fi
+"$handler" "$@"
+exit
+__PKG_ARCHIVE__
+LAUNCHER
+tar -cf - -- lib >> "$output"
+
+chmod 755 -- "$output"
+mv -fT -- "$output" "$destination/pkg"
+printf 'Built %s/pkg\n' "$destination"

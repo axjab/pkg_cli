@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/workspace.sh"
+
+if [[ $# == 1 && ( $1 == --help || $1 == -h ) ]]; then
+    printf 'Usage: pkg ls\n\nList defined package names, one per line, in alphabetical order.\nSearch the current directory and its parents for .pkg.\nAn empty workspace prints nothing and succeeds.\nOutside a workspace, print an error and fail.\n'
+    exit 0
+fi
+if (( $# )); then
+    printf 'Usage: pkg ls\n' >&2
+    exit 2
+fi
+if root=$(pkg_find_workspace); then
+    :
+else
+    status=$?
+    if (( status == 2 )); then
+        printf 'pkg: not a pkg workspace (no .pkg in this directory or its parents)\n' >&2
+    fi
+    exit 1
+fi
+packages="$root/.pkg/packages"
+if [[ ! -d "$packages" || -L "$packages" ]]; then
+    printf 'pkg: invalid package storage: %s\n' "$packages" >&2
+    exit 1
+fi
+# Each immediate directory is a package definition. Ignore unrelated files.
+find "$packages" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort

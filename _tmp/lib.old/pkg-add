@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly PKG_ROOT="$ROOT/pkg"
+readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly PKG_ROOT="$ROOT/deb"
 
 main() {
     if (( $# < 1 || $# > 2 )); then
-        printf 'Usage: %s <executable> [package-name]\n' "${0##*/}" >&2
+        printf 'Usage: %s <executable> [package-name]\n' "pkg add" >&2
         exit 2
     fi
 
@@ -43,7 +43,7 @@ resolve_package() {
     done
 
     case ${#candidates[@]} in
-        0) fail 'No existing packages found; create one with new-pkg first' ;;
+        0) fail 'No existing packages found; create one with pkg init first' ;;
         1) printf '%s\n' "${candidates[0]}" ;;
         *)
             [[ -t 0 ]] || fail 'Multiple packages exist; specify a package name'

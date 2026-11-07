@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/workspace.sh"
+
+if [[ $# == 1 && $1 == help ]]; then
+    printf 'Usage: pkg ls\n\nList defined package names, one per line, in alphabetical order.\nSearch the current directory and its parents for .pkg.\nAn empty workspace prints nothing and succeeds.\nOutside a workspace, print an error and fail.\n'
+    exit 0
+fi
+if (( $# )); then
+    printf 'Usage: pkg ls\n' >&2
+    exit 2
+fi
+pkg_debug command ls
+if root=$(pkg_find_workspace); then
+    :
+else
+    status=$?
+    if (( status == 2 )); then
+        printf 'pkg: not a pkg workspace (no .pkg in this directory or its parents)\n' >&2
+    fi
+    exit 1
+fi
+packages="$root/.pkg/packages"
+pkg_debug packages.directory "$packages"
+if [[ ! -d "$packages" || -L "$packages" ]]; then
+    pkg_debug packages.storage invalid_or_missing
+    printf 'pkg: invalid package storage: %s\n' "$packages" >&2
+    exit 1
+fi
+list_packages() {
+    # Each immediate directory is a package definition. Ignore unrelated files.
+    find "$packages" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort
+}
+
+if [[ ${PKG_DEBUG:-0} != 1 ]]; then
+    list_packages
+    exit
+fi
+
+pkg_debug packages.storage ready
+# The suffix preserves the listing's exact trailing newlines during capture.
+if listing=$(list_packages && printf '.'); then
+    listing=${listing%.}
+else
+    status=$?
+    pkg_debug packages.list_exit "$status"
+    exit "$status"
+fi
+
+count=0
+if [[ -n $listing ]]; then
+    while IFS= read -r package; do
+        pkg_debug "packages.name[$count]" "$package"
+        count=$((count + 1))
+    done <<< "${listing%$'\n'}"
+fi
+pkg_debug packages.count "$count"
+printf '%s' "$listing"

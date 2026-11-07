@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/workspace.sh"
+
+if [[ $# == 1 && $1 == help ]]; then
+    printf 'Usage: pkg init\n\nInitialize an empty multi-package workspace in the current directory.\nAn existing workspace in this directory or a parent is preserved.\nNo packages are created or imported.\n'
+    exit 0
+fi
+if (( $# )); then
+    printf 'Usage: pkg init\n' >&2
+    exit 2
+fi
+
+pkg_debug command init
+existing=false
+if root=$(pkg_find_workspace); then
+    existing=true
+else
+    status=$?
+    (( status == 2 )) || exit "$status"
+    root=$(pwd -P)
+fi
+
+packages="$root/.pkg/packages"
+pkg_debug init.reinitialize "$existing"
+pkg_debug init.target_root "$root"
+pkg_debug packages.directory "$packages"
+if [[ -L "$packages" || ( -e "$packages" && ! -d "$packages" ) ]]; then
+    pkg_debug packages.storage invalid
+    printf 'pkg: invalid package storage: %s\n' "$packages" >&2
+    exit 1
+fi
+mkdir -p -- "$packages"
+pkg_debug packages.storage ready
+if $existing; then
+    printf 'Reinitialized existing pkg workspace in %s/.pkg/\n' "$root"
+else
+    printf 'Initialized empty pkg workspace in %s/.pkg/\n' "$root"
+fi

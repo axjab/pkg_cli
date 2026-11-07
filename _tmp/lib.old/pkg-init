@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly PKG_ROOT="pkg"
+readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly PKG_ROOT="$ROOT/deb"
 readonly INITIAL_VERSION="0.0.0"
 
 main() {
@@ -23,7 +24,7 @@ main() {
 }
 
 usage() {
-    printf 'Usage: %s [package-name]\n' "${0##*/}"
+    printf 'Usage: %s [package-name]\n' "pkg init"
 }
 
 validate_name() {

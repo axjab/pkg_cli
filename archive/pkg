@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+main() {
+    local root command target
+    root=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+    command=${1:-help}
+    if (( $# )); then shift; fi
+    case "$command" in
+        -h|--help) command=help ;;
+    esac
+    if [[ ! $command =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+        printf 'Invalid subcommand: %s\n' "$command" >&2
+        exit 2
+    fi
+    target="$root/lib/pkg-$command"
+    if [[ ! -f $target || ! -x $target ]]; then
+        printf 'Unknown or non-executable subcommand: %s\nRun pkg help for usage.\n' "$command" >&2
+        exit 127
+    fi
+    exec "$target" "$@"
+}
+
+main "$@"
