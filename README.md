@@ -4,6 +4,49 @@
 and publishes them to a configured signed APT repository. Runtime code is Bash
 with standard Debian command-line tools. Gum supplies interactive selection.
 
+## Release a new version of pkg
+
+Run these commands from the `pkg-cli` checkout. This example upgrades an
+installed copy from `0.2.1` to `0.2.2`. It assumes you already have a publishing
+host configured in `pkg` and its repository configured in APT.
+
+1. Run `pkg edit` and change the `Version:` field in `DEBIAN/control` to
+   `0.2.2`. Save and close the editor.
+2. Compile the new executable into the checkout:
+
+   ```bash
+   PKG_COMPILE_DIR="$PWD" do/compile
+   ./pkg version
+   ```
+
+   The new executable should print `0.2.2`. If `do/compile` already writes to
+   `./pkg` in your setup, run it directly.
+3. Replace the executable staged in the package, build the archive, and publish it:
+
+   ```bash
+   pkg add -f ./pkg
+   pkg build
+   pkg push
+   ```
+
+   `pkg add -f` replaces the existing `bin/pkg`. The build creates
+   `dist/pkg-cli_0.2.2_all.deb`. If a local build of that version already exists,
+   use `pkg build -f` to replace it. If `pkg push` asks which archive to publish,
+   choose the one you just built. Publishing also refreshes the signed APT index.
+4. On the machine running the installed package, refresh APT and upgrade:
+
+   ```bash
+   sudo apt update
+   sudo apt upgrade
+   pkg version
+   ```
+
+   After `apt update`, APT knows about `0.2.2` and the installed command still
+   reports `0.2.1`. After the upgrade, it should print `0.2.2`. To upgrade only
+   this package, use `sudo apt install --only-upgrade pkg-cli` in place of
+   `sudo apt upgrade`. If the version still looks wrong, run `type -a pkg` to
+   check whether a standalone copy is taking precedence over the installed one.
+
 Compile the checkout with `do/compile` to install `/exe/pkg`. Ensure `/exe` is on
 PATH. The compiled command runs independently of the checkout.
 
