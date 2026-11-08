@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ! -t 0 ]]; then
+    printf 'Run this script from an interactive terminal.\n' >&2
+    exit 2
+fi
+
+default_repo=axjab/pkg_cli
+IFS= read -r -p "Repository [$default_repo] " repo || exit 1
+repo=${repo:-$default_repo}
+if [[ ! $repo =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$ || ${repo#*/} == . || ${repo#*/} == .. ]]; then
+    printf 'Enter the repository as owner/name.\n' >&2
+    exit 2
+fi
+
+IFS= read -r -p 'Issue title ' title || exit 1
+if [[ $title != *[![:space:]]* ]]; then
+    printf 'An issue title is required.\n' >&2
+    exit 2
+fi
+
+body_file=$(mktemp)
+trap 'rm -f -- "$body_file"' EXIT
+printf 'Paste the Markdown body, then press Ctrl+D on an empty line.\n' >&2
+cat > "$body_file"
+
+printf '\nCreate "%s" in %s? [y/N] ' "$title" "$repo" >&2
+IFS= read -r answer || exit 1
+case ${answer,,} in
+    y|yes) ;;
+    *) printf 'Canceled.\n' >&2; exit 0 ;;
+esac
+
+token=${GITHUB_TOKEN:-}
+if [[ -z $token ]]; then
+    IFS= read -r -s -p 'GitHub token ' token || exit 1
+    printf '\n' >&2
+fi
+if [[ -z $token || $token == *[[:space:]]* ]]; then
+    printf 'A GitHub token without whitespace is required.\n' >&2
+    exit 2
+fi
+
+json_payload() {
+    python3 - "$title" "$body_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+title, body_file = sys.argv[1:]
+json.dump({"title": title, "body": Path(body_file).read_text(encoding="utf-8")}, sys.stdout)
+PY
+}
+
+# Read the authorization header through a descriptor to keep it out of curl's arguments.
+if response=$(
+    json_payload | curl --disable --fail-with-body --silent --show-error \
+        --request POST "https://api.github.com/repos/$repo/issues" \
+        --header @<(printf 'Authorization: Bearer %s\n' "$token") \
+        --header 'Accept: application/vnd.github+json' \
+        --header 'Content-Type: application/json' \
+        --data-binary @-
+); then
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["html_url"])' <<< "$response"
+else
+    status=$?
+    if [[ -n $response ]]; then
+        printf '%s\n' "$response" >&2
+    fi
+    exit "$status"
+fi
