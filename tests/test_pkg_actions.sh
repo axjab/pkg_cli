@@ -2,7 +2,7 @@
 set -euo pipefail
 pkg=${PKG_TEST_BINARY:?set PKG_TEST_BINARY to compiled pkg}
 root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
-expected_version=$(sed -n 's/^Version: //p' "$root/packaging/pkg-cli.control")
+expected_version=$(sed -n 's/^Version: //p' "$root/.pkg/packages/pkg-cli/DEBIAN/control")
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 cd "$work"

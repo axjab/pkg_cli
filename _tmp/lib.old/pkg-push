@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-main() {
-    printf '%s\n' 'pkg push is unfinished in the supplied script. Publication is not implemented.' >&2
-    exit 1
-}
-
-main "$@"

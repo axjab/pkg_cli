@@ -1,8 +1,11 @@
 Package: pkg-cli
-Version: 0.1.2
+Version: 0.2.0
 Section: utils
 Priority: optional
 Architecture: all
 Maintainer: axjab <axjab@github.com>
-Description: Simplified interface to .deb packaging and publishing
+Description: Create, manage, build, and publish Debian packages
+ Manage package metadata, dependencies, executables, configuration files,
+ services, and other assets from the terminal. Build Debian archives and
+ publish them to signed APT repositories over SSH.
 Depends: gum (>= 2.0.2)

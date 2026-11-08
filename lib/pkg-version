@@ -3,4 +3,4 @@ set -euo pipefail
 if [[ ${1:-} == help && $# == 1 ]]; then printf 'Usage: pkg version\n'; exit; fi
 (( $# == 0 )) || { printf 'Usage: pkg version\n' >&2; exit 2; }
 lib=$(dirname -- "${BASH_SOURCE[0]}")
-PKG_FIELD=Version awk -v action=get -f "$lib/control.awk" "$lib/../packaging/pkg-cli.control"
+PKG_FIELD=Version awk -v action=get -f "$lib/control.awk" "$lib/../.pkg/packages/pkg-cli/DEBIAN/control"

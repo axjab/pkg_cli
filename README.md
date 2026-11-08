@@ -170,12 +170,15 @@ Build/install the CLI itself:
 
 ```bash
 do/build-deb
-sudo apt install ./dist/pkg-cli_0.1.1_all.deb
+sudo apt install ./dist/pkg-cli_0.1.2_all.deb
 ```
 
 The Debian package declares `gum` and `openssh-client` dependencies. Its package
-version and `pkg version` both come from `packaging/pkg-cli.control`. Run
+version and `pkg version` both come from `.pkg/packages/pkg-cli/DEBIAN/control`. Run
 `do/compile` after changing the version to update the standalone CLI.
+`do/build-deb` compiles the CLI, stages it through `pkg add -f` in that package,
+and builds its full contents through `pkg build`. Use `do/build-deb -f` to replace
+a conflicting local archive of the same version.
 
 Client repository bootstrap (configures trust/source, without installing packages):
 

@@ -13,7 +13,12 @@ if [[ ! -d $project_root/lib ]]; then
 fi
 
 # Packaging supplies a private staging directory for the same executable.
-destination=${PKG_COMPILE_DIR:-/exe}
+control="$project_root/.pkg/packages/pkg-cli/DEBIAN/control"
+if [[ ! -f $control || -L $control ]]; then
+    printf 'compile-pkg: missing or invalid package definition: %s\n' "$control" >&2
+    exit 1
+fi
+destination=${PKG_COMPILE_DIR:-.}
 mkdir -p -- "$destination"
 output=$(mktemp -- "$destination/.pkg-build.XXXXXXXX")
 trap 'rm -f -- "$output"' EXIT
@@ -85,7 +90,7 @@ tar_options=()
 if [[ -n ${SOURCE_DATE_EPOCH:-} ]]; then
     tar_options=(--sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner)
 fi
-tar "${tar_options[@]}" -C "$project_root" -cf - -- lib packaging/pkg-cli.control >> "$output"
+tar "${tar_options[@]}" -C "$project_root" -cf - -- lib .pkg/packages/pkg-cli/DEBIAN/control >> "$output"
 
 chmod 755 -- "$output"
 mv -fT -- "$output" "$destination/pkg"
