@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+host=${INSTALL_HOST:-old_shrine}
+path=${INSTALL_PATH:-/srv/pkg/bootstrap/install.sh}
+url=${INSTALL_URL:-https://apt.alj.cx/install}
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+script="$root/install.sh"
+
+sh -n "$script"
+rsync --checksum --perms --chmod=F644 --secluded-args -- \
+    "$script" "$host:$path"
+
+served=$(mktemp)
+trap 'rm -f -- "$served"' EXIT
+curl -fsS --proto '=https' -o "$served" -- "$url"
+cmp -- "$script" "$served"
+printf 'Published and verified %s\n' "$url"

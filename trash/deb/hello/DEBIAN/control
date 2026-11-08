@@ -1,7 +1,0 @@
-Package: axjab-hello
-Version: 0.0.0
-Architecture: all
-Maintainer: ME <axjab@github.com>
-Description: Test Debian package
- extended description over
- several lines

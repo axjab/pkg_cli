@@ -2,12 +2,13 @@
 set -euo pipefail
 
 if (( $# != 0 )); then
-    printf 'Usage: compile-pkg (run in the directory containing lib/)\n' >&2
+    printf 'Usage: do/compile\n' >&2
     exit 2
 fi
 
-if [[ ! -d lib ]]; then
-    printf 'compile-pkg: lib/ is missing from the current directory\n' >&2
+project_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+if [[ ! -d $project_root/lib ]]; then
+    printf 'compile-pkg: lib/ is missing from %s\n' "$project_root" >&2
     exit 1
 fi
 
@@ -79,7 +80,7 @@ fi
 exit
 __PKG_ARCHIVE__
 LAUNCHER
-tar -cf - -- lib >> "$output"
+tar -C "$project_root" -cf - -- lib >> "$output"
 
 chmod 755 -- "$output"
 mv -fT -- "$output" "$destination/pkg"

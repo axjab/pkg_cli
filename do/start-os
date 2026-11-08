@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# docker run --rm -it \
+  # -e DEBIAN_FRONTEND=noninteractive \
+  # -v "$PWD/dist:/pkg:ro" \
+  # debian:trixie-slim bash
+
+set -e
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+docker image inspect aptt >/dev/null 2>&1 || docker build -t aptt "$root"
+exec docker run --rm -it -v "$root/dist:/pkg:ro" aptt
