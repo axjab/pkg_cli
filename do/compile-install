@@ -1,0 +1,32 @@
+#!/bin/sh
+# Bundle lib/bootstrap.sh and repos/*.sh into read-only srv/install.sh.
+set -eu
+export LC_ALL=C
+base=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mkdir -p -- "$base/srv"
+[ ! -L "$base/srv/install.sh" ] || { echo 'compile: refusing symlink srv/install.sh' >&2; exit 1; }
+[ ! -d "$base/srv/install.sh" ] || { echo 'compile: srv/install.sh is a directory' >&2; exit 1; }
+output=$(mktemp "$base/srv/.install.XXXXXXXX")
+trap 'rm -f -- "$output"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+sh -n "$base/lib/bootstrap.sh"
+{
+    sed '/    # BEGIN REPOSITORIES/,$d' "$base/lib/bootstrap.sh"
+    count=0
+    for module in "$base"/repos/*.sh; do
+        [ -f "$module" ] || continue
+        sh -n "$module"
+        printf '    (\n'
+        cat -- "$module"
+        printf '\n    )\n'
+        count=$((count + 1))
+    done
+    [ "$count" -gt 0 ] || { echo 'compile: no repos/*.sh found' >&2; exit 1; }
+    sed '1,/    # END REPOSITORIES/d' "$base/lib/bootstrap.sh"
+} > "$output"
+sh -n "$output"
+chmod 0444 "$output"
+mv -fT -- "$output" "$base/srv/install.sh"
+printf 'Built %s/srv/install.sh (%s repositories, mode 0444)\n' "$base" "$count"
