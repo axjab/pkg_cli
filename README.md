@@ -1,52 +1,77 @@
-# Step 1: workspace initialization
+# pkg — build locally, publish over SSH
 
-Copy `lib/pkg-init`, `lib/pkg-ls`, and `lib/workspace.sh` into your checkout's
-`lib/` directory, after backing up the current `lib/pkg-init`. Keep your current
-dispatcher. It must pass the caller's working directory unchanged to handlers.
-Only `pkg-init` and `pkg-ls` are executable; `workspace.sh` is a sourced helper.
+**pkg turns local executables into Debian packages and aims to publish them to a signed APT repository with one command.** The goal is to find and install those packages by name on a fresh Debian system after configuring its APT source and signing key.
 
-Internal layout: `.pkg/packages/<package-name>/`. The directory starts empty.
-Package creation and control-file handling are deferred. No existing `deb/`
-packages are migrated, and no add/build/push scripts change in this step.
-Do not use those old commands as part of the new workspace workflow yet.
+Local package creation, staging, building, host registration, and SSH checks are implemented. **The next development work is `pkg push`, delivered in small, testable ZIP updates.** Preflight checks belong inside `pkg push`; you should not have to run a separate publication toolkit.
 
-`pkg init` takes no operands for now. It reuses the nearest ancestor workspace,
-or initializes the current directory if none exists. Repeat initialization
-preserves contents and restores a missing empty `packages/` directory.
-`pkg ls` prints sorted package names, one per line. It searches physical parent
-directories; an invalid marker stops discovery. Marker/storage symlinks are
-rejected in this first version. No registry or Git repository is created.
+## Everyday workflow
 
-With the updated `compile-pkg`, rebuild and run `./pkg --debug ls` or
-`./pkg --debug init`. Debug lines go to stderr and show the directories
-checked, the selected workspace, and the listing or initialization result.
-Set `NO_COLOR=1` for plain text logs you can compare across runs. When
-running a handler directly, set `PKG_DEBUG=1` to enable the same diagnostics.
+Run `bash compile` in the `pkg_cli` checkout to install the bundled command at `/exe/pkg`. Ensure `/exe` is on your PATH. The installed command works independently of the checkout.
 
-## Manual gate
-
-Set `pkg_cli` to the absolute path of your existing launcher, then:
+In a package workspace:
 
 ```bash
-pkg_cli="$HOME/src/packages/pkg"
-trial=$(mktemp -d)
-cd "$trial"
-"$pkg_cli" ls          # error; exit 1
-"$pkg_cli" init        # initialized; exit 0
-"$pkg_cli" ls          # no output; exit 0
-"$pkg_cli" init        # reinitialized; exit 0
-mkdir child
-cd child
-"$pkg_cli" ls          # no output; exit 0
-"$pkg_cli" init        # reuses parent; creates no child/.pkg
+pkg init
+pkg create hello
+pkg add ./bin/hello to hello
+pkg build hello
+pkg host add pkg-host
+pkg hosts
+pkg ping pkg-host
 ```
 
-Run `bash tests.sh` from this extracted directory for isolated automated checks.
-Those checks use internal fixtures solely to verify listing and preservation;
-operators will create packages through a later CLI command.
+`./bin/hello` must already be a readable executable. `pkg create` supplies placeholder control metadata. `pkg build` prints the resulting archive path, normally under the workspace's `dist/`.
 
-Status: implementation candidate. Await the maintainer's launcher-level test
-before proceeding to package creation or another refactor.
+Package arguments can be omitted when there is only one package. Where selection is ambiguous, the CLI prompts in a terminal; scripts must provide an explicit choice. Workspace discovery works from child directories too.
 
-Rollback: restore the backed-up `lib/pkg-init`; remove the two newly added files.
-Use a disposable workspace for this test. Keep all existing package data.
+Useful commands:
+
+```bash
+pkg ls
+pkg help
+pkg help build
+pkg --debug build hello
+NO_COLOR=1 pkg --debug ping pkg-host
+```
+
+## Publication model
+
+Builds remain local. Publication sends an existing local archive to the selected SSH account. SSH aliases and `user@host` targets are supported:
+
+```sshconfig
+Host pkg-host
+    HostName old_shrine
+    User apt
+```
+
+Both `pkg-host` and `apt@old_shrine` identify the intended destination. The target account's home directory **is the APT repository root**. It will be served over HTTPS by infrastructure managed separately. pkg does not configure HTTPS.
+
+The intended interface being implemented is:
+
+```bash
+pkg push hello to pkg-host
+pkg push hello    # infer the sole configured host, otherwise prompt
+pkg push          # infer unambiguous package and host choices
+```
+
+These are development targets, not a claim that publication already works. The first checkpoint may only select inputs and run integrated readiness checks; it must clearly report that nothing has been published yet.
+
+The finished command will transfer the selected archive, generate APT indexes and Release metadata, sign and verify InRelease, and activate the publication. It will manage `pool/`, `dists/trixie/`, and `apt-signing-key.asc` directly beneath the target home. `Architecture: all` packages must be discoverable by the intended amd64 Debian client.
+
+## How we develop and test
+
+1. The agent implements one useful increment inside `pkg push` and tests it.
+2. The agent delivers a ZIP with complete replacement files at checkout-relative paths, such as `lib/pkg-push` and `tests/test_pkg_push.py`.
+3. You extract it over your existing `pkg_cli` checkout, preserving unrelated files and package data.
+4. You run `bash compile`, then the short manual test supplied with the checkpoint.
+5. You send the actual output back. The agent fixes failures before advancing.
+
+No repeated redesign of settled decisions, no prerequisite standalone-script detour, and no full pipeline delivered before you can test the first useful step.
+
+## Status and scope
+
+The previous host checkpoint reported 45 passing tests, including handler and bundled-CLI coverage. A standalone `publish-preflight` prototype exists as implementation reference; its presence does not prove the new host is ready or that `pkg push` is implemented.
+
+Explicit workspace selection (`pkg -C`) and a separate archive-validator command are deferred. Necessary input checks remain part of push. Legacy migration, project registries, remote builds, installers, and repository cleanup are later work.
+
+See **PKG-CLI-HANDOFF.md** for the complete implementation contract, checkpoint plan, testing expectations, source references, and superseded decisions.
