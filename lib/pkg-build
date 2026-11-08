@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/package.sh"
+
+usage='Usage: pkg build [<package>] [to <directory>]'
+if [[ $# == 1 && $1 == help ]]; then
+    printf '%s\n' "$usage"
+    cat <<'HELP'
+
+Build and verify a Debian package. Print the resulting archive's path.
+With no package name, use the only package or prompt in a terminal.
+If several packages exist, scripts must provide a name.
+
+Archives go to dist/ at the workspace root by default. An explicit
+relative directory is resolved from the current directory.
+An existing archive with different contents is preserved.
+
+Example: pkg build hello to ./releases
+Debug:   pkg --debug build hello
+HELP
+    exit 0
+fi
+
+staging=''
+cleanup() {
+    local status=$?
+    if [[ -n $staging ]]; then
+        rm -rf -- "$staging"
+    fi
+    if (( status != 0 )); then
+        pkg_debug build.result failed
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+
+pkg_debug command build
+package_args=()
+output=''
+if (( $# == 1 || $# == 3 )); then
+    package_args=("$1")
+    shift
+fi
+case $# in
+    0) ;;
+    2)
+        if [[ $1 != to || -z $2 ]]; then
+            pkg_fail "$usage" 2
+        fi
+        output=$2
+        ;;
+    *) pkg_fail "$usage" 2 ;;
+esac
+
+root=$(pkg_require_workspace)
+package=$(pkg_select_package "$root" 'pkg build <package>' "${package_args[@]}")
+if ! command -v dpkg-deb >/dev/null; then
+    pkg_fail 'dpkg-deb is required to build packages'
+fi
+
+output=$(realpath -m -- "${output:-${root%/}/dist}")
+pkg_debug build.output_directory "$output"
+case $output in
+    "${root%/}/.pkg"|"${root%/}/.pkg/"*)
+        pkg_fail 'build output must be outside the managed .pkg directory'
+        ;;
+esac
+mkdir -p -- "$output"
+
+# Let dpkg-deb name the archive from control metadata in a private directory.
+staging=$(mktemp -d -- "${output%/}/.build.XXXXXXXX")
+dpkg-deb --root-owner-group --build "$package" "$staging" >/dev/null
+archives=("$staging"/*.deb)
+if (( ${#archives[@]} != 1 )) || [[ ! -f ${archives[0]} ]]; then
+    pkg_fail 'expected dpkg-deb to produce one archive'
+fi
+archive=${archives[0]}
+destination="${output%/}/${archive##*/}"
+pkg_debug build.artifact "$destination"
+
+archive_package=$(dpkg-deb --field "$archive" Package)
+if [[ $archive_package != "${package##*/}" ]]; then
+    pkg_fail "control metadata names '$archive_package', expected '${package##*/}'"
+fi
+dpkg-deb --fsys-tarfile "$archive" | tar -tf - >/dev/null
+pkg_debug build.verified true
+
+# Publish atomically without overwriting an archive, including a concurrent build.
+if ln -T -- "$archive" "$destination" 2>"$staging/link-error"; then
+    pkg_debug build.result built
+elif [[ ! -L $destination && -f $destination ]] && cmp -s -- "$archive" "$destination"; then
+    pkg_debug build.result already_built
+elif [[ -e $destination || -L $destination ]]; then
+    pkg_fail "archive already exists: $destination. Choose another directory with 'to <directory>'."
+else
+    cat -- "$staging/link-error" >&2
+    pkg_fail "could not publish archive: $destination"
+fi
+printf '%s\n' "$destination"

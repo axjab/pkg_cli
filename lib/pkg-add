@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/package.sh"
+
+usage='Usage: pkg add <executable> [to <package>]'
+if [[ $# == 1 && $1 == help ]]; then
+    printf '%s\n' "$usage"
+    cat <<'HELP'
+
+Stage one executable in an existing package. The short form
+pkg add <executable> <package> also selects a package explicitly.
+With no package name, use the only package or prompt in a terminal.
+If several packages exist, scripts must provide a name.
+
+Example: pkg add ./bin/hello to hello
+Debug:   pkg --debug add ./bin/hello
+HELP
+    exit 0
+fi
+
+staging=''
+cleanup() {
+    local status=$?
+    if [[ -n $staging ]]; then
+        rm -f -- "$staging"
+    fi
+    if (( status != 0 )); then
+        pkg_debug add.result failed
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+
+pkg_debug command add
+package_args=()
+case $# in
+    1) ;;
+    2) package_args=("$2") ;;
+    3)
+        if [[ $2 != to ]]; then
+            pkg_fail "$usage" 2
+        fi
+        package_args=("$3")
+        ;;
+    *) pkg_fail "$usage" 2 ;;
+esac
+
+source_path=$1
+filename=${source_path##*/}
+pkg_debug file.source "$source_path"
+if [[ ! -f $source_path || ! -r $source_path || ! -x $source_path ]]; then
+    pkg_fail "source is not a readable executable file: $source_path"
+fi
+if [[ $filename == *$'\n'* ]]; then
+    pkg_fail 'executable name cannot contain newlines'
+fi
+
+root=$(pkg_require_workspace)
+package=$(pkg_select_package "$root" 'pkg add <executable> to <package>' "${package_args[@]}")
+
+destination="$package/bin/$filename"
+pkg_debug file.target "$destination"
+
+# Finish copying outside the package before publishing the executable.
+staging=$(mktemp -- "$root/.pkg/.add.XXXXXXXX")
+install -m 755 -- "$source_path" "$staging"
+mv -T -n -- "$staging" "$destination"
+if [[ -e $staging ]]; then
+    if [[ ! -L $destination && -f $destination ]] && cmp -s -- "$staging" "$destination"; then
+        pkg_debug add.result already_staged
+        printf 'Already staged (identical): %s\n' "$destination"
+        exit 0
+    fi
+    pkg_fail "destination already exists: $destination"
+fi
+
+pkg_debug add.result staged
+printf 'Staged: %s -> %s\n' "$source_path" "$destination"

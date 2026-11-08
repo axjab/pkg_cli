@@ -1,0 +1,7 @@
+Package: 2ndpkg
+Version: 0.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: TODO <maintainer@example.invalid>
+Description: TODO package description
