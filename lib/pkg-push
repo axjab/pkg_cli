@@ -51,10 +51,11 @@ case ${#archives[@]} in
     1) archive=${archives[0]} ;;
     *)
         [[ -t 0 ]] || pkg_fail "multiple built archives for $name; keep one version in dist/ or select interactively."
-        printf 'Available archives:\n' >&2
-        for candidate in "${archives[@]}"; do printf '  %s\n' "${candidate##*/}" >&2; done
-        printf 'Archive filename: ' >&2
-        IFS= read -r choice || exit 1
+        archive_names=()
+        for candidate in "${archives[@]}"; do
+            archive_names+=("${candidate##*/}")
+        done
+        choice=$(pkg_choose 'Available archives:' 'Archive filename' "${archive_names[@]}")
         archive=''
         for candidate in "${archives[@]}"; do
             [[ ${candidate##*/} != "$choice" ]] || archive=$candidate
@@ -69,41 +70,7 @@ pkg_debug push.artifact "$archive"
 if [[ -n $host ]]; then
     pkg_debug host.selection explicit
 else
-    pkg_load_hosts
-    case ${#hosts[@]} in
-        0)
-            printf 'pkg: no hosts configured. Use pkg host add <host>.\n' >&2
-            exit 1
-            ;;
-        1)
-            host=${hosts[0]}
-            pkg_debug host.selection only
-            ;;
-        *)
-            pkg_debug host.selection ambiguous
-            if [[ ! -t 0 ]]; then
-                printf 'pkg: multiple hosts configured. Use pkg push [<package>] to <host>.\n' >&2
-                exit 1
-            fi
-            printf 'Available hosts:\n' >&2
-            printf '  %s\n' "${hosts[@]}" >&2
-            printf 'Host: ' >&2
-            IFS= read -r host || exit 1
-            # Choose one of the displayed destinations.
-            selected=false
-            for candidate in "${hosts[@]}"; do
-                if [[ $candidate == "$host" ]]; then
-                    selected=true
-                    break
-                fi
-            done
-            if [[ $selected != true ]]; then
-                printf 'pkg: select a configured host\n' >&2
-                exit 1
-            fi
-            pkg_debug host.selection interactive
-            ;;
-    esac
+    host=$(pkg_select_host 'pkg push [<package>] to <host>')
 fi
 pkg_valid_host "$host" || pkg_fail 'expected an SSH alias or user@hostname' 2
 pkg_debug host.target "$host"

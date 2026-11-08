@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( $# != 0 )); then
+    printf 'Usage: do/build-deb\n' >&2
+    exit 2
+fi
+
+root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+dist="$root/dist"
+mkdir -p -- "$dist"
+staging=$(mktemp -d -- "$dist/.pkg-cli.XXXXXXXX")
+trap 'rm -rf -- "$staging"' EXIT
+
+package="$staging/package"
+install -d -m 755 -- "$package/DEBIAN" "$package/usr/bin"
+install -m 644 -- "$root/packaging/pkg-cli.control" "$package/DEBIAN/control"
+# Keep archive timestamps stable across rebuilds.
+export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-0}
+PKG_COMPILE_DIR="$package/usr/bin" "$root/do/compile" >/dev/null
+
+# Let dpkg-deb name the archive from the control file.
+dpkg-deb --root-owner-group --build "$package" "$staging" >/dev/null
+archives=("$staging"/*.deb)
+if (( ${#archives[@]} != 1 )) || [[ ! -f ${archives[0]} ]]; then
+    printf 'build-deb: expected one Debian archive\n' >&2
+    exit 1
+fi
+archive=${archives[0]}
+chmod 644 -- "$archive"
+destination="$dist/${archive##*/}"
+
+# Publish without clobbering another build of the same version.
+if ln -T -- "$archive" "$destination" 2>"$staging/link-error"; then
+    :
+elif [[ ! -L $destination && -f $destination ]] && cmp -s -- "$archive" "$destination"; then
+    :
+elif [[ -e $destination || -L $destination ]]; then
+    printf 'build-deb: conflicting archive exists: %s\n' "$destination" >&2
+    exit 1
+else
+    cat -- "$staging/link-error" >&2
+    exit 1
+fi
+printf '%s\n' "$destination"

@@ -35,41 +35,7 @@ if (( $# == 1 )); then
     host=$1
     pkg_debug host.selection explicit
 else
-    pkg_load_hosts
-    case ${#hosts[@]} in
-        0)
-            printf 'pkg: no hosts configured. Use pkg host add <host>.\n' >&2
-            exit 1
-            ;;
-        1)
-            host=${hosts[0]}
-            pkg_debug host.selection only
-            ;;
-        *)
-            pkg_debug host.selection ambiguous
-            if [[ ! -t 0 ]]; then
-                printf 'pkg: multiple hosts configured. Use pkg ping <host>.\n' >&2
-                exit 1
-            fi
-            printf 'Available hosts:\n' >&2
-            printf '  %s\n' "${hosts[@]}" >&2
-            printf 'Host: ' >&2
-            IFS= read -r host || exit 1
-            # Choose one of the displayed destinations.
-            selected=false
-            for candidate in "${hosts[@]}"; do
-                if [[ $candidate == "$host" ]]; then
-                    selected=true
-                    break
-                fi
-            done
-            if [[ $selected != true ]]; then
-                printf 'pkg: select a configured host\n' >&2
-                exit 1
-            fi
-            pkg_debug host.selection interactive
-            ;;
-    esac
+    host=$(pkg_select_host 'pkg ping <host>')
 fi
 if ! pkg_valid_host "$host"; then
     printf 'pkg: expected an SSH alias or user@hostname\n' >&2

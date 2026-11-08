@@ -1,81 +1,169 @@
 # pkg — build locally, publish over SSH
 
+`pkg` manages staged Debian packages in `.pkg/packages/`, builds local archives,
+and publishes them to a configured signed APT repository. Runtime code is Bash
+with standard Debian command-line tools. Gum supplies interactive selection.
+
+Compile the checkout with `do/compile` to install `/exe/pkg`. Ensure `/exe` is on
+PATH. The compiled command runs independently of the checkout.
+
+## Command schema
+
+```bash
+pkg version                         # 0.0.0 for now
+pkg help                            # or: pkg help <command>
+pkg init
+pkg new myapp
+pkg add ./myapp to myapp
+pkg add dependency 'gum (>= 2.0.2)' to myapp
+pkg mv executable myapp to myapp-cli in myapp
+pkg rm dependency gum from myapp
+pkg ls                              # workspace package names
+pkg ls myapp                        # categorized inspection
+pkg set version 1.0.0 in myapp
+pkg get version from myapp          # value only
+pkg build myapp
+pkg host add apt@server
+pkg host                            # configured hosts
+pkg ping apt@server
+pkg push myapp to apt@server
+```
+
+Package arguments may be omitted when the target is unambiguous. With multiple
+matches, terminal input prompts for a choice; noninteractive input fails with
+explicit-selection guidance. No mutation occurs before the ambiguity is resolved.
+For automation, specify the category, package, and a package-relative path where
+basenames collide. Input is never evaluated as shell code.
+
+`pkg new` creates every skeleton directory, including empty categories.
+`create`, `hosts`, `--dep`, `--deps`, and `--executables` remain compatibility aliases.
+
+## Components
+
+```bash
+pkg add [<category>] <source-or-dependency> [as <path>] [to <package>]
+pkg mv [<category>] <old> to <new> [in <package>]
+pkg rm [<category>] <item> [from <package>]
+pkg ls <category> [in <package>]
+```
+
+| Category | Default destination for added files |
+| --- | --- |
+| executable | `bin/<filename>` |
+| configuration | `etc/<package>/<filename>` |
+| service | `usr/lib/systemd/system/<filename>` |
+| documentation | `usr/share/doc/<package>/<filename>` |
+| asset | `usr/share/<package>/<filename>` |
+| desktop | `usr/share/applications/` for `.desktop`, otherwise `usr/share/icons/` |
+| metadata | `DEBIAN/<filename>` |
+| lifecycle | `DEBIAN/<hook>`: preinst, postinst, prerm, postrm, config |
+| other | Requires `as <package-relative-path>` |
+| dependency | An entry in `Depends` |
+| package | Use `new`, `mv package`, or `rm package` |
+
+`config`, `exe`, `dep`, `doc`, `assets`, `dependencies`, and `executables` are
+accepted aliases. Explicit destinations must belong to the selected category.
+Source files are copied; executable and lifecycle files receive mode 755, other
+files mode 644. Executable sources must already have execute permission.
+Existing different files are never overwritten. Stage directory contents as
+individual files; directory imports are not supported.
+
+```bash
+pkg add configuration ./myapp.conf to myapp
+pkg add service ./myapp.service to myapp
+pkg add asset ./template as usr/share/myapp/templates/default to myapp
+pkg add lifecycle ./postinst to myapp
+pkg add metadata ./conffiles to myapp
+pkg ls service in myapp
+pkg mv configuration etc/myapp/myapp.conf to defaults.conf in myapp
+pkg rm service myapp.service from myapp
+```
+
+File paths and familiar suffixes inform inference. A bare word that could name
+both a dependency and a local file prompts; `./file` or an explicit category
+resolves this. Unknown file types require a category in scripts. Configuration
+files are staged as supplied; add `DEBIAN/conffiles` explicitly when needed.
+Service files are staged; installing/enabling services requires suitable hooks.
+
+Filtered queries print paths or dependency entries without headings or color;
+empty categories produce empty output. Legacy `--executables` retains its old
+`bin/` basename output. `pkg ls <package>` gives exact package names precedence
+when a package has the same name as a category; use `in <package>` to query that
+category explicitly.
+
+`mv` accepts a basename to rename a file in place or a package-relative path to
+relocate it. `rm` removes a staged file/symlink or a whole staged package when
+selected as a package. Package deletion leaves built archives and published
+versions alone. `DEBIAN/control` is protected; use metadata commands to edit it.
+
+## Metadata and dependencies
+
+```bash
+pkg set description 'My terminal utility' in myapp
+pkg set Maintainer 'Me <me@example.com>' in myapp
+pkg set X-Owner 'operations' in myapp
+pkg get X-Owner from myapp
+pkg set Description $'Short summary\nLong description' in myapp
+pkg mv dependency gum to 'gum (>= 2.0.2)' in myapp
+pkg mv package myapp to terminal-tools
+pkg set name my-tools in terminal-tools
+```
+
+Fields are case-insensitive. `name` aliases `Package`; both `set name` and
+`mv package` update the staged directory and control Package field together.
+Payload paths and file contents are retained, so references inside scripts
+remain under your control. Metadata updates validate a candidate control file
+before replacing the original. Invalid changes leave the original intact.
+
+Dependency commands accept one quoted relationship entry, including version
+constraints and alternatives. A bare dependency name matches a versioned entry;
+multiple matches prompt. Dependency `mv` replaces the entry atomically. Adding
+an identical entry is idempotent; it does not silently replace a different
+constraint for the same name. Repository origin is not encoded in Depends;
+repository configuration and APT preferences remain client configuration.
+
+## Inspection
+
+`pkg ls <package>` shows metadata once under `DEBIAN/control`, dependency
+relationships separately, and color-coded components. Documentation, desktop
+assets, and other are hidden when they have no files or symlinks. All remaining
+categories remain visible. Every category uses a matching secondary entry color.
+Redirected output is plain. `NO_COLOR=1` also disables color and selects plain
+interactive prompts; otherwise interactive selection uses Gum.
+
+## Build and publication
+
+`pkg build` writes to workspace `dist/`. Increment the package version before
+building changed contents when that output filename already exists.
+`pkg push` publishes an existing built archive to the selected host, creates
+repository directories and signing boilerplate, generates and verifies signed
+APT metadata, and activates the publication. An omitted host uses the only
+configured host or prompts. The target account home is the repository root;
+HTTPS serving is configured separately. `localhost` publishes locally.
+
+Build/install the CLI itself:
+
+```bash
+do/build-deb
+sudo apt install ./dist/pkg-cli_0.1.0_all.deb
+```
+
+The Debian package declares `gum` and `openssh-client` dependencies. Its package
+version comes from `packaging/pkg-cli.control`; the CLI's `version` subcommand
+currently reports the requested hardcoded `0.0.0` independently.
+
+Client repository bootstrap (configures trust/source, without installing packages):
+
 ```bash
 curl -fsS https://apt.alj.cx/install | sh
 ```
 
-**pkg turns local executables into Debian packages and aims to publish them to a signed APT repository with one command.** The goal is to find and install those packages by name on a fresh Debian system after configuring its APT source and signing key.
+## Verification and updates
 
-Local package creation, staging, building, host registration, and SSH checks are implemented. **The next development work is `pkg push`, delivered in small, testable ZIP updates.** Preflight checks belong inside `pkg push`; you should not have to run a separate publication toolkit.
+Run `do/test-schema` for Bash regression tests of the compiled CLI: metadata,
+all component categories, package renaming/removal, noninteractive ambiguity,
+terminal prompts, path safety, inspection colors, and a real package build.
+The older `do/test` remains the legacy test-suite entry point.
 
-## Everyday workflow
-
-Run `bash compile` in the `pkg_cli` checkout to install the bundled command at `/exe/pkg`. Ensure `/exe` is on your PATH. The installed command works independently of the checkout.
-
-In a package workspace:
-
-```bash
-pkg init
-pkg create hello
-pkg add ./bin/hello to hello
-pkg build hello
-pkg host add pkg-host
-pkg hosts
-pkg ping pkg-host
-```
-
-`./bin/hello` must already be a readable executable. `pkg create` supplies placeholder control metadata. `pkg build` prints the resulting archive path, normally under the workspace's `dist/`.
-
-Package arguments can be omitted when there is only one package. Where selection is ambiguous, the CLI prompts in a terminal; scripts must provide an explicit choice. Workspace discovery works from child directories too.
-
-Useful commands:
-
-```bash
-pkg ls
-pkg help
-pkg help build
-pkg --debug build hello
-NO_COLOR=1 pkg --debug ping pkg-host
-```
-
-## Publication model
-
-Builds remain local. Publication sends an existing local archive to the selected SSH account. SSH aliases and `user@host` targets are supported:
-
-```sshconfig
-Host pkg-host
-    HostName old_shrine
-    User apt
-```
-
-Both `pkg-host` and `apt@old_shrine` identify the intended destination. The target account's home directory **is the APT repository root**. It will be served over HTTPS by infrastructure managed separately. pkg does not configure HTTPS.
-
-The intended interface being implemented is:
-
-```bash
-pkg push hello to pkg-host
-pkg push hello    # infer the sole configured host, otherwise prompt
-pkg push          # infer unambiguous package and host choices
-```
-
-These are development targets, not a claim that publication already works. The first checkpoint may only select inputs and run integrated readiness checks; it must clearly report that nothing has been published yet.
-
-The finished command will transfer the selected archive, generate APT indexes and Release metadata, sign and verify InRelease, and activate the publication. It will manage `pool/`, `dists/trixie/`, and `apt-signing-key.asc` directly beneath the target home. `Architecture: all` packages must be discoverable by the intended amd64 Debian client.
-
-## How we develop and test
-
-1. The agent implements one useful increment inside `pkg push` and tests it.
-2. The agent delivers a ZIP with complete replacement files at checkout-relative paths, such as `lib/pkg-push` and `tests/test_pkg_push.py`.
-3. You extract it over your existing `pkg_cli` checkout, preserving unrelated files and package data.
-4. You run `bash compile`, then the short manual test supplied with the checkpoint.
-5. You send the actual output back. The agent fixes failures before advancing.
-
-No repeated redesign of settled decisions, no prerequisite standalone-script detour, and no full pipeline delivered before you can test the first useful step.
-
-## Status and scope
-
-The previous host checkpoint reported 45 passing tests, including handler and bundled-CLI coverage. A standalone `publish-preflight` prototype exists as implementation reference; its presence does not prove the new host is ready or that `pkg push` is implemented.
-
-Explicit workspace selection (`pkg -C`) and a separate archive-validator command are deferred. Necessary input checks remain part of push. Legacy migration, project registries, remote builds, installers, and repository cleanup are later work.
-
-See **PKG-CLI-HANDOFF.md** for the complete implementation contract, checkpoint plan, testing expectations, source references, and superseded decisions.
+Updates are ZIP overlays with checkout-relative paths. Extract over the checkout,
+run `do/compile`, then test in a disposable package workspace.

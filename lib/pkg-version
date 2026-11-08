@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == help && $# == 1 ]]; then printf 'Usage: pkg version\n'; exit; fi
+(( $# == 0 )) || { printf 'Usage: pkg version\n' >&2; exit 2; }
+printf '0.0.0\n'

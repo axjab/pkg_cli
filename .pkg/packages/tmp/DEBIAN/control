@@ -1,0 +1,9 @@
+Package: tmp
+Version: 0.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: me
+Description: test
+desc: test
+Depends: gum

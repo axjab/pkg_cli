@@ -1,5 +1,6 @@
 # Package selection shared by commands that operate on one package.
 source "$(dirname -- "${BASH_SOURCE[0]}")/workspace.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/choose.sh"
 
 pkg_fail() {
     printf 'pkg: %s\n' "$1" >&2
@@ -20,7 +21,7 @@ pkg_require_workspace() {
 }
 
 pkg_package_ready() {
-    [[ -d $1 && ! -L $1 && -f $1/DEBIAN/control && -d $1/bin && ! -L $1/bin ]]
+    [[ -d $1 && ! -L $1 && -d $1/DEBIAN && ! -L $1/DEBIAN && -f $1/DEBIAN/control && ! -L $1/DEBIAN/control ]]
 }
 
 pkg_select_package() {
@@ -51,7 +52,7 @@ pkg_select_package() {
         case ${#candidates[@]} in
             0)
                 pkg_debug package.selection missing
-                pkg_fail 'no packages available. Create one with pkg create <name>.'
+                pkg_fail 'no packages available. Create one with pkg new <name>.'
                 ;;
             1)
                 pkg_debug package.selection only
@@ -63,11 +64,10 @@ pkg_select_package() {
                     pkg_fail "multiple packages available. Use $explicit_syntax."
                 fi
                 pkg_debug package.selection interactive
-                printf 'Available packages:\n' >&2
-                printf '  %s\n' "${candidates[@]}" >&2
-                printf 'Package name: ' >&2
-                if ! IFS= read -r name || [[ -z $name ]]; then
-                    pkg_fail 'no package selected'
+                if name=$(pkg_choose 'Available packages:' 'Package name' "${candidates[@]}"); then
+                    [[ -n $name ]] || pkg_fail 'no package selected'
+                else
+                    pkg_fail 'no package selected' "$?"
                 fi
                 ;;
         esac
@@ -81,7 +81,7 @@ pkg_select_package() {
     package="$packages/$name"
     pkg_debug package.target "$package"
     if [[ ! -e $package && ! -L $package ]]; then
-        pkg_fail "unknown package '$name'. Create it with pkg create $name."
+        pkg_fail "unknown package '$name'. Create it with pkg new $name."
     fi
     if ! pkg_package_ready "$package"; then
         pkg_fail "invalid package layout: $package"

@@ -23,7 +23,8 @@ class AddTests(unittest.TestCase):
         self.env.pop("PKG_DEBUG", None)
         self.assertEqual(self.run_pkg("init").returncode, 0)
 
-    def run_pkg(self, command, *args, cwd=None, debug=False, stdin=subprocess.DEVNULL):
+    def run_pkg(self, command, *args, cwd=None, debug=False, stdin=subprocess.DEVNULL,
+                stderr=subprocess.PIPE):
         env = dict(self.env)
         if BINARY:
             argv = [BINARY]
@@ -36,7 +37,7 @@ class AddTests(unittest.TestCase):
             argv = [str(LIB / f"pkg-{command}"), *args]
         return subprocess.run(
             argv, cwd=cwd or self.root, env=env, stdin=stdin,
-            capture_output=True, text=True, timeout=10,
+            stdout=subprocess.PIPE, stderr=stderr, text=True, timeout=10,
         )
 
     def create(self, *names):
@@ -141,6 +142,54 @@ class AddTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertFalse(self.staged("core").exists())
         self.assertFalse(self.staged("hello").exists())
+
+    def test_gum_selection_keeps_the_menu_on_stderr(self):
+        self.create("hello", "core")
+        self.use_gum_stub()
+        self.env["GUM_TEST_CHOICE"] = "core"
+        result, terminal_output = self.run_add_with_gum_terminal()
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(b"gum menu", terminal_output)
+        self.assertEqual(result.stdout, f"Staged: {self.source.name} -> {self.staged('core')}\n")
+        self.assertTrue(self.staged("core").is_file())
+        self.assertFalse(self.staged("hello").exists())
+
+    def test_unsuccessful_gum_selection_stages_nothing(self):
+        self.create("hello", "core")
+        self.use_gum_stub()
+        for choice, status, expected in (("core", 130, 130), ("", 0, 1), ("other", 0, 1)):
+            with self.subTest(choice=choice, status=status):
+                self.env.update(GUM_TEST_CHOICE=choice, GUM_TEST_STATUS=str(status))
+                result, terminal_output = self.run_add_with_gum_terminal()
+                self.assertEqual(result.returncode, expected)
+                self.assertEqual(result.stdout, "")
+                self.assertIn(b"gum menu", terminal_output)
+                self.assertFalse(self.staged("core").exists())
+                self.assertFalse(self.staged("hello").exists())
+
+    def use_gum_stub(self):
+        gum = self.root / "gum"
+        gum.write_text(
+            '#!/bin/sh\n'
+            '[ "$#" -eq 8 ] && [ "$1" = choose ] && [ "$6" = -- ] && '
+            '[ "$7" = core ] && [ "$8" = hello ] || exit 2\n'
+            'printf "gum menu\\n" >&2\n'
+            'printf "%s" "$GUM_TEST_CHOICE"\n'
+            'exit "${GUM_TEST_STATUS:-0}"\n'
+        )
+        gum.chmod(0o755)
+        self.env.pop("NO_COLOR")
+        self.env.update(TERM="xterm-256color", PATH=f"{self.root}:{self.env['PATH']}")
+
+    def run_add_with_gum_terminal(self):
+        master, terminal = pty.openpty()
+        try:
+            result = self.run_pkg("add", self.source.name, stdin=terminal, stderr=terminal)
+            os.set_blocking(master, False)
+            return result, os.read(master, 4096)
+        finally:
+            os.close(master)
+            os.close(terminal)
 
     def test_no_workspace_and_malformed_nearest_marker(self):
         self.packages.rmdir()

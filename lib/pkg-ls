@@ -1,16 +1,81 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(dirname -- "${BASH_SOURCE[0]}")/workspace.sh"
+lib=$(dirname -- "${BASH_SOURCE[0]}")
+source "$lib/workspace.sh"
 
+usage='Usage: pkg ls [<package>]
+       pkg ls <category> [in <package>]
+       pkg ls --deps <package>
+       pkg ls --executables <package>'
 if [[ $# == 1 && $1 == help ]]; then
-    printf 'Usage: pkg ls\n\nList defined package names, one per line, in alphabetical order.\nSearch the current directory and its parents for .pkg.\nAn empty workspace prints nothing and succeeds.\nOutside a workspace, print an error and fail.\n'
+    printf '%s\n' "$usage"
+    cat <<'HELP'
+
+Without arguments, list workspace package names in alphabetical order.
+With a package name, show metadata and all staged components by category.
+With a category, print package-relative file paths or dependency entries.
+Use --deps or --executables to print one entry per line without headings
+or color. An empty list prints nothing and succeeds.
+HELP
     exit 0
 fi
-if (( $# )); then
-    printf 'Usage: pkg ls\n' >&2
-    exit 2
+source "$lib/categories.sh"
+category_query=true
+# An exact package name wins in the documented `ls <package>` form.
+if [[ $# == 1 && $1 =~ ^[a-z0-9][a-z0-9+.-]+$ ]] && root=$(pkg_find_workspace); then
+    [[ ! -d $root/.pkg/packages/$1 ]] || category_query=false
+fi
+if [[ $category_query == true ]] && category=$(pkg_type "${1:-}"); then
+    source "$lib/package.sh"
+    source "$lib/depends.sh"
+    source "$lib/list-components.sh"
+    legacy=${1:-}; shift
+    [[ ${1:-} != in && ${1:-} != from ]] || shift
+    (( $# <= 1 )) || pkg_fail "$usage" 2
+    root=$(pkg_require_workspace)
+    package=$(pkg_select_package "$root" 'pkg ls <category> in <package>' "$@")
+    if [[ $category == package ]]; then source "$lib/inspect.sh"; pkg_inspect "$package"
+    elif [[ $legacy == --executables ]]; then
+        [[ ! -d $package/bin ]] || find "$package/bin" -mindepth 1 -maxdepth 1 -type f -perm /111 -printf '%f\n' | LC_ALL=C sort
+    else pkg_list_components "$category" "$package"; fi
+    exit
 fi
 pkg_debug command ls
+if (( $# )); then
+    source "$lib/package.sh"
+    source "$lib/depends.sh"
+
+    case ${1:-} in
+        --deps|--executables)
+            (( $# == 2 )) || pkg_fail "$usage" 2
+            mode=$1
+            shift
+            ;;
+        *)
+            (( $# == 1 )) || pkg_fail "$usage" 2
+            mode=all
+            ;;
+    esac
+
+    root=$(pkg_require_workspace)
+    [[ $1 =~ ^[a-z0-9][a-z0-9+.-]+$ ]] || pkg_fail "invalid package name: $1" 2
+    package="$root/.pkg/packages/$1"
+    [[ -d $root/.pkg/packages && ! -L $root/.pkg/packages && -d $package && ! -L $package ]] || pkg_fail "unknown or invalid package: $1"
+    list_executables() {
+        [[ -d $package/bin ]] || return 0
+        find "$package/bin" -mindepth 1 -maxdepth 1 -type f -perm /111 -printf '%f\n' | LC_ALL=C sort
+    }
+    case $mode in
+        --deps) pkg_list_dependencies "$package" ;;
+        --executables) list_executables ;;
+        all)
+            source "$lib/inspect.sh"
+            pkg_inspect "$package"
+            ;;
+    esac
+    exit
+fi
+
 if root=$(pkg_find_workspace); then
     :
 else

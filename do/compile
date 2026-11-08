@@ -12,7 +12,8 @@ if [[ ! -d $project_root/lib ]]; then
     exit 1
 fi
 
-destination=/exe
+# Packaging supplies a private staging directory for the same executable.
+destination=${PKG_COMPILE_DIR:-/exe}
 mkdir -p -- "$destination"
 output=$(mktemp -- "$destination/.pkg-build.XXXXXXXX")
 trap 'rm -f -- "$output"' EXIT
@@ -42,7 +43,7 @@ if [[ -z $first_line ]]; then
     printf 'pkg: embedded archive is missing\n' >&2
     exit 1
 fi
-tail -n "+$first_line" -- "$self" | tar -xf - -C "$bundle"
+tail -n "+$first_line" -- "$self" | tar --no-same-owner -xf - -C "$bundle"
 
 case $command_name in
     ''|help)
@@ -80,7 +81,11 @@ fi
 exit
 __PKG_ARCHIVE__
 LAUNCHER
-tar -C "$project_root" -cf - -- lib >> "$output"
+tar_options=()
+if [[ -n ${SOURCE_DATE_EPOCH:-} ]]; then
+    tar_options=(--sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner)
+fi
+tar "${tar_options[@]}" -C "$project_root" -cf - -- lib >> "$output"
 
 chmod 755 -- "$output"
 mv -fT -- "$output" "$destination/pkg"

@@ -1,5 +1,6 @@
 # Shared discovery and validation for publication destinations.
 source "$(dirname -- "${BASH_SOURCE[0]}")/workspace.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/choose.sh"
 
 pkg_valid_host() {
     [[ $1 =~ ^([a-zA-Z0-9_][a-zA-Z0-9_.-]*@)?[a-zA-Z0-9_:][a-zA-Z0-9_.:%-]*$ ]]
@@ -35,4 +36,38 @@ pkg_load_hosts() {
         hosts+=("$host")
     done
     pkg_debug hosts.count "${#hosts[@]}"
+}
+
+pkg_select_host() {
+    local explicit_syntax=$1 host candidate hosts_directory
+    local -a hosts=()
+    pkg_load_hosts || return
+
+    case ${#hosts[@]} in
+        0)
+            printf 'pkg: no hosts configured. Use pkg host add <host>.\n' >&2
+            return 1
+            ;;
+        1)
+            pkg_debug host.selection only
+            printf '%s\n' "${hosts[0]}"
+            ;;
+        *)
+            pkg_debug host.selection ambiguous
+            if [[ ! -t 0 ]]; then
+                printf 'pkg: multiple hosts configured. Use %s.\n' "$explicit_syntax" >&2
+                return 1
+            fi
+            host=$(pkg_choose 'Available hosts:' 'Host' "${hosts[@]}") || return
+            for candidate in "${hosts[@]}"; do
+                if [[ $candidate == "$host" ]]; then
+                    pkg_debug host.selection interactive
+                    printf '%s\n' "$host"
+                    return 0
+                fi
+            done
+            printf 'pkg: select a configured host\n' >&2
+            return 1
+            ;;
+    esac
 }

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+lib=$(dirname -- "${BASH_SOURCE[0]}")
+source "$lib/actions.sh"
+pkg_action mv "$@"
