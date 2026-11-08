@@ -1,0 +1,12 @@
+TODO, in order
+- [ ] Define and implement standalone commands to configure and inspect a named remote.
+- [ ] Write the SSH connection check and demonstrate the expected failure against the unavailable target.
+- [ ] Validate the selected local .deb and identify its package, version, architecture, and checksum.
+- [ ] Check the remote repository’s prerequisites, permissions, and signing capability.
+- [ ] Upload the archive into temporary remote storage and verify its checksum.
+- [ ] Generate package indexes.
+- [ ] Generate Release metadata.
+- [ ] Sign and verify InRelease.
+- [ ] Activate the prepared publication while preserving the previous usable repository on failure.
+- [ ] Exercise the complete standalone pipeline, including installation, upgrade, retries, and interrupted publication.
+- [ ] After your verification, integrate the proven pipeline into pkg push.

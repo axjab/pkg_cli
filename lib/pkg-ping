@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/hosts.sh"
+
+print_result() {
+    local color=$1 message=$2
+    if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+        printf '\033[%sm%s\033[0m\n' "$color" "$message"
+    else
+        printf '%s\n' "$message"
+    fi
+}
+
+if [[ $# == 1 && $1 == help ]]; then
+    cat <<'HELP'
+Usage: pkg ping [host]
+
+Check SSH command execution for an alias or user@hostname.
+An explicit host can be checked from any directory.
+With no host, use the workspace's only destination or prompt in a terminal.
+The literal localhost selects direct local execution.
+
+SSH uses batch authentication and a five-second connection timeout.
+Configure authentication and host trust through your usual SSH setup.
+HELP
+    exit 0
+fi
+pkg_debug command ping
+if (( $# > 1 )); then
+    printf 'Usage: pkg ping [host]\n' >&2
+    exit 2
+fi
+
+if (( $# == 1 )); then
+    host=$1
+    pkg_debug host.selection explicit
+else
+    pkg_load_hosts
+    case ${#hosts[@]} in
+        0)
+            printf 'pkg: no hosts configured. Use pkg host add <host>.\n' >&2
+            exit 1
+            ;;
+        1)
+            host=${hosts[0]}
+            pkg_debug host.selection only
+            ;;
+        *)
+            pkg_debug host.selection ambiguous
+            if [[ ! -t 0 ]]; then
+                printf 'pkg: multiple hosts configured. Use pkg ping <host>.\n' >&2
+                exit 1
+            fi
+            printf 'Available hosts:\n' >&2
+            printf '  %s\n' "${hosts[@]}" >&2
+            printf 'Host: ' >&2
+            IFS= read -r host || exit 1
+            # Choose one of the displayed destinations.
+            selected=false
+            for candidate in "${hosts[@]}"; do
+                if [[ $candidate == "$host" ]]; then
+                    selected=true
+                    break
+                fi
+            done
+            if [[ $selected != true ]]; then
+                printf 'pkg: select a configured host\n' >&2
+                exit 1
+            fi
+            pkg_debug host.selection interactive
+            ;;
+    esac
+fi
+if ! pkg_valid_host "$host"; then
+    printf 'pkg: expected an SSH alias or user@hostname\n' >&2
+    exit 2
+fi
+
+pkg_debug host.target "$host"
+if [[ $host == localhost ]]; then
+    pkg_debug host.transport local
+    pkg_debug ping.result reachable
+    print_result 32 'Reachable: localhost (local execution)'
+    exit 0
+fi
+
+pkg_debug host.transport ssh
+if ssh -nT -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
+    -o ClearAllForwardings=yes -- "$host" true; then
+    pkg_debug ping.result reachable
+    print_result 32 "Reachable: $host"
+else
+    status=$?
+    pkg_debug ping.result failed
+    pkg_debug ping.exit "$status"
+    print_result 31 "pkg: SSH check failed for $host (exit $status)" >&2
+    exit "$status"
+fi

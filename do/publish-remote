@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    printf '%s\n' \
+        'Usage: publish-remote add <workspace> <name> <ssh-target> <repository-directory>' \
+        '       publish-remote show <workspace> <name> [host|directory]'
+}
+
+fail() {
+    printf 'publish-remote: %s\n' "$1" >&2
+    exit "${2:-1}"
+}
+
+if [[ $# == 1 && $1 == help ]]; then
+    usage
+    exit 0
+fi
+
+case "${1:-}:$#" in
+    add:5|show:3|show:4) ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+action=$1
+workspace=$2
+name=$3
+if [[ ! $name =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ ]]; then
+    fail "invalid remote name: $name" 2
+fi
+if [[ -z $workspace || ! -d $workspace/.pkg || -L $workspace/.pkg ]]; then
+    fail "expected an initialized workspace at $workspace"
+fi
+
+remotes="$workspace/.pkg/remotes"
+entry="$remotes/$name"
+if [[ -L $remotes || ( -e $remotes && ! -d $remotes ) ]]; then
+    fail "invalid remote storage: $remotes"
+fi
+
+valid_target() {
+    [[ $1 =~ ^([a-zA-Z0-9_][a-zA-Z0-9_.-]*@)?[a-zA-Z0-9_:][a-zA-Z0-9_.:%-]*$ ]]
+}
+
+if [[ $action == add ]]; then
+    target=$4
+    repository_directory=$5
+    if ! valid_target "$target"; then
+        fail 'expected an SSH alias, host, or user@host' 2
+    fi
+    if [[ -z $repository_directory || $repository_directory =~ [[:cntrl:]] ]]; then
+        fail 'expected a repository directory without control characters' 2
+    fi
+    if [[ -e $entry || -L $entry ]]; then
+        fail "remote already exists: $name"
+    fi
+    mkdir -p -- "$remotes"
+
+    # Publish both fields together and preserve any concurrent registration.
+    pending=$(mktemp -- "$remotes/.remote.XXXXXXXX")
+    trap 'rm -f -- "$pending"' EXIT
+    printf '%s\n%s\n' "$target" "$repository_directory" > "$pending"
+    if ! ln -T -- "$pending" "$entry"; then
+        fail "could not add remote: $name"
+    fi
+    printf 'Configured remote %s\n' "$name"
+    exit 0
+fi
+
+if [[ ! -f $entry || -L $entry ]]; then
+    fail "unknown or invalid remote: $name"
+fi
+mapfile -t fields < "$entry"
+if (( ${#fields[@]} != 2 )) || ! valid_target "${fields[0]}" ||
+    [[ -z ${fields[1]} || ${fields[1]} =~ [[:cntrl:]] ]]; then
+    fail "invalid configuration for remote: $name"
+fi
+
+case "${4:-}" in
+    '') printf 'host=%s\ndirectory=%s\n' "${fields[@]}" ;;
+    host) printf '%s\n' "${fields[0]}" ;;
+    directory) printf '%s\n' "${fields[1]}" ;;
+    *) usage >&2; exit 2 ;;
+esac
