@@ -1,5 +1,9 @@
 # pkg — build locally, publish over SSH
 
+```bash
+curl -fsS https://apt.alj.cx/install | sh
+```
+
 **pkg turns local executables into Debian packages and aims to publish them to a signed APT repository with one command.** The goal is to find and install those packages by name on a fresh Debian system after configuring its APT source and signing key.
 
 Local package creation, staging, building, host registration, and SSH checks are implemented. **The next development work is `pkg push`, delivered in small, testable ZIP updates.** Preflight checks belong inside `pkg push`; you should not have to run a separate publication toolkit.
