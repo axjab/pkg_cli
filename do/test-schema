@@ -5,6 +5,6 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 PKG_COMPILE_DIR="$work/bin" "$root/do/compile" >/dev/null
 export PKG_TEST_BINARY="$work/bin/pkg"
-for test in test_pkg_actions.sh test_pkg_inspect.sh test_pkg_schema_terminal.sh; do
+for test in test_pkg_actions.sh test_pkg_inspect.sh test_pkg_schema_terminal.sh test_pkg_usability.sh; do
     bash "$root/tests/$test"
 done

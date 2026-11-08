@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+lib=$(dirname -- "${BASH_SOURCE[0]}")
+source "$lib/package.sh"
+source "$lib/depends.sh"
+if [[ ${1:-} == help && $# == 1 ]]; then
+    printf 'Usage: pkg edit [<package>]\n\nOpen DEBIAN/control using VISUAL, EDITOR, or editor. Multiple packages prompt\nwith numbered choices. Editor arguments are whitespace-separated; use a wrapper\nscript for complex arguments. Changes are made directly to the control file.\n'
+    exit
+fi
+(( $# <= 1 )) || pkg_fail 'Usage: pkg edit [<package>]' 2
+root=$(pkg_require_workspace)
+package=$(pkg_select_package "$root" 'pkg edit <package>' "$@")
+control=$(pkg_dependency_control "$package")
+# Do not eval an environment variable. A literal executable path may have spaces.
+editor=${VISUAL:-${EDITOR:-editor}}
+if [[ -x $editor && -f $editor ]]; then command=("$editor")
+else read -r -a command <<< "$editor"; fi
+(( ${#command[@]} )) || pkg_fail 'editor command is empty'
+"${command[@]}" "$control"

@@ -64,7 +64,7 @@ pkg_select_package() {
                     pkg_fail "multiple packages available. Use $explicit_syntax."
                 fi
                 pkg_debug package.selection interactive
-                if name=$(pkg_choose 'Available packages:' 'Package name' "${candidates[@]}"); then
+                if name=$(pkg_choose_package "$packages" "${candidates[@]}"); then
                     [[ -n $name ]] || pkg_fail 'no package selected'
                 else
                     pkg_fail 'no package selected' "$?"

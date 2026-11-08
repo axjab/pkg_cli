@@ -41,3 +41,15 @@ pkg_change_dependency() (
     mv --no-copy -fT -- "$candidate" "$control"
     printf 'Updated Depends (%s): %s\n' "$action" "$entry"
 )
+
+# A bare secondary version denotes a minimum; an explicit operator overrides it.
+pkg_dependency_with_version() {
+    local name=$1 constraint=$2 operator='>=' version
+    [[ $name =~ ^[a-z0-9][a-z0-9+.-]+(:[a-z0-9-]+)?$ ]] || pkg_fail 'a secondary version requires one dependency name' 2
+    if [[ $constraint =~ ^(\>\=|\<\=|\=|\>\>|\<\<)[[:space:]]*(.+)$ ]]; then
+        operator=${BASH_REMATCH[1]}; version=${BASH_REMATCH[2]}
+    else version=$constraint; fi
+    [[ -n $version && $version != *[[:space:]]* && $version != *['()<>=,|']* ]] || pkg_fail 'invalid dependency version' 2
+    dpkg --validate-version "$version" >/dev/null 2>&1 || pkg_fail "invalid dependency version: $version" 2
+    printf '%s (%s %s)' "$name" "$operator" "$version"
+}

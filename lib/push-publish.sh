@@ -1,6 +1,6 @@
 # Activate a prepared release while the repository write lock is held.
 activate_release() {
-    local filename=$1 stage_suite="$probe_dir/dists/trixie"
+    local filename=$1 force=$2 stage_suite="$probe_dir/dists/trixie"
     live_suite="$repository/dists/trixie"
     live_archive="$repository/pool/main/$filename"
     publish_archive="$probe_dir/pool/main/$filename"
@@ -14,10 +14,17 @@ activate_release() {
     mkdir -p -- "$repository/pool/main" "$repository/dists" ||
         fail 'could not create the public repository directories'
 
-    # The existing release never refers to a newly added archive.
     if [[ -e $live_archive || -L $live_archive ]]; then
-        [[ -f $live_archive ]] && cmp -s -- "$publish_archive" "$live_archive" ||
-            fail "different archive already exists at $live_archive"
+        [[ -f $live_archive && ! -L $live_archive ]] || fail "invalid archive at $live_archive"
+        if ! cmp -s -- "$publish_archive" "$live_archive"; then
+            [[ $force == 1 ]] || fail "different archive already exists at $live_archive"
+            # Keep the old archive in staging until the signed suite is live.
+            replacement_marker="$probe_dir/replacement-archive"
+            ln -T -- "$publish_archive" "$replacement_marker" ||
+                fail 'could not prepare archive replacement'
+            mv --exchange --no-copy -T -- "$publish_archive" "$live_archive" ||
+                fail "could not replace $live_archive"
+        fi
     else
         ln -T -- "$publish_archive" "$live_archive" || fail "could not publish $live_archive"
     fi
@@ -39,9 +46,14 @@ activate_release() {
 cleanup_push() {
     local status=$?
     trap - EXIT
-    # On a failed activation, unlink only files created from this private stage.
+    # On a failed activation, restore a replaced archive or remove a new one.
     if [[ -n ${commit_marker:-} && ! $commit_marker -ef $live_suite/InRelease ]]; then
-        if [[ $publish_archive -ef $live_archive ]]; then
+        if [[ -n ${replacement_marker:-} && $replacement_marker -ef $live_archive ]]; then
+            if ! mv --exchange --no-copy -T -- "$publish_archive" "$live_archive"; then
+                pkg_push_result 31 "pkg: could not roll back $live_archive. Original archive retained at $publish_archive"
+                exit 1
+            fi
+        elif [[ $publish_archive -ef $live_archive ]]; then
             rm -f -- "$live_archive" || pkg_push_result 31 "pkg: could not roll back $live_archive"
         fi
         if [[ $publish_public_key -ef $live_public_key ]]; then

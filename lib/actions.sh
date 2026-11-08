@@ -92,6 +92,24 @@ pkg_resolve() {
         done < "$inventory"
         rm -f -- "$inventory"
     done
+    # When matches span packages, select the package first using the shared menu.
+    local -a matching_packages=() kept_types=() kept_packages=() kept_values=() kept_labels=()
+    local -A matched=()
+    for directory in "${candidate_packages[@]}"; do
+        if [[ ! -v matched[$directory] ]]; then
+            matched[$directory]=1; matching_packages+=("${directory##*/}")
+        fi
+    done
+    if (( ${#matching_packages[@]} > 1 )) && [[ -t 0 ]]; then
+        selected=$(pkg_choose_package "$root/.pkg/packages" "${matching_packages[@]}") || pkg_fail 'no package selected'
+        for i in "${!labels[@]}"; do
+            [[ ${candidate_packages[i]##*/} == "$selected" ]] || continue
+            kept_types+=("${candidate_types[i]}"); kept_packages+=("${candidate_packages[i]}")
+            kept_values+=("${candidate_values[i]}"); kept_labels+=("${labels[i]}")
+        done
+        candidate_types=("${kept_types[@]}"); candidate_packages=("${kept_packages[@]}")
+        candidate_values=("${kept_values[@]}"); labels=("${kept_labels[@]}")
+    fi
     case ${#labels[@]} in
         0) pkg_fail "no matching ${type:-component or package}: $query" ;;
         1) selected=${labels[0]} ;;
@@ -152,11 +170,12 @@ pkg_infer_add() {
     pkg_fail 'select a listed category' 2
 }
 pkg_action() {
-    local action=$1 type='' scope='' destination='' source='' new='' staging mode actual
+    local action=$1 type='' scope='' destination='' source='' new='' staging mode actual version='' status force=0 target
     shift
     if [[ ${1:-} == help ]]; then
         cat <<HELP
-Usage: pkg add [<category>] <source-or-dependency> [as <path>] [to <package>]
+Usage: pkg add [-f] [<category>] <source> [as <path>] [to <package>]
+       pkg add dependency <name> [<version-or-constraint>] [to <package>]
        pkg mv [<category>] <old> to <new> [in <package>]
        pkg rm [<category>] <item> [from <package>]
 Categories: package, dependency, executable, configuration, service,
@@ -164,8 +183,13 @@ Categories: package, dependency, executable, configuration, service,
 Use new to create a package; set/get manage DEBIAN/control fields.
 Paths are package-relative. Ambiguous terminal input prompts; scripts must
 supply category/package/path. rm package removes the local staged definition.
+Use add -f to replace an existing regular file at the staging destination.
 HELP
         return
+    fi
+    if [[ $action == add && ${1:-} == -f ]]; then
+        force=1
+        shift
     fi
     if type=$(pkg_type "${1:-}"); then shift; else type=''; fi
     [[ ${1:-} != -- ]] || shift
@@ -173,13 +197,21 @@ HELP
     local count=${#args[@]}
     if (( count >= 3 )); then
         case ${args[count-2]} in
-            in|from) scope=${args[count-1]}; unset 'args[count-1]' 'args[count-2]' ;;
-            to) if [[ $action != mv ]]; then scope=${args[count-1]}; unset 'args[count-1]' 'args[count-2]'; fi ;;
+            in|from) scope=${args[count-1]}; [[ -n $scope ]] || pkg_fail 'package name cannot be empty' 2; unset 'args[count-1]' 'args[count-2]' ;;
+            to) if [[ $action != mv ]]; then scope=${args[count-1]}; [[ -n $scope ]] || pkg_fail 'package name cannot be empty' 2; unset 'args[count-1]' 'args[count-2]'; fi ;;
         esac
     fi
     set -- "${args[@]}"
     # Preserve the old add/rm <item> <package> shorthand.
-    if [[ $action != mv && $# == 2 ]]; then scope=$2; set -- "$1"; fi
+    if [[ $action == add && $# == 2 && ( $type == dependency || ( -z $type && $2 =~ ^[0-9\<\>\=] ) ) ]]; then
+        version=$2
+        [[ -n $version ]] || pkg_fail 'dependency version cannot be empty' 2
+        type=dependency
+        set -- "$1"
+    elif [[ $action != mv && $# == 2 ]]; then
+        [[ -z $scope && -n $2 ]] || pkg_fail 'unexpected extra argument or empty package name' 2
+        scope=$2; set -- "$1"
+    fi
     case $action:$# in
         add:1|rm:1) source=$1 ;;
         add:3) [[ $2 == as ]] || pkg_fail 'expected as <destination>' 2; source=$1; destination=$3 ;;
@@ -199,7 +231,9 @@ HELP
         [[ -z $scope ]] || selection=("$scope")
         package=$(pkg_select_package "$root" 'pkg add <category> <item> to <package>' "${selection[@]}")
         if [[ $type == dependency ]]; then
+            [[ $force == 0 ]] || pkg_fail 'add -f replaces files only. Use pkg mv to replace a dependency.' 2
             [[ -z $destination ]] || pkg_fail 'dependencies do not have file destinations' 2
+            [[ -z $version ]] || source=$(pkg_dependency_with_version "$source" "$version")
             pkg_change_dependency add "$root" "$package" "$source"
             return
         fi
@@ -212,13 +246,37 @@ HELP
         [[ $actual != control ]] || pkg_fail 'use pkg set to edit DEBIAN/control' 2
         mode=644; [[ $type != executable && $type != lifecycle ]] || mode=755
         staging=$(mktemp -- "$root/.pkg/.add.XXXXXXXX")
-        if ! install -m "$mode" -- "$source" "$staging"; then rm -f -- "$staging"; return 1; fi
-        mkdir -p -- "$package/$(dirname -- "$destination")"
-        mv -T -n -- "$staging" "$package/$destination"
+        if install -m "$mode" -- "$source" "$staging"; then :
+        else status=$?; rm -f -- "$staging"; pkg_debug add.result failed; return "$status"; fi
+        target="$package/$destination"
+        if mkdir -p -- "${target%/*}" && mv -T -n -- "$staging" "$target"; then :
+        else status=$?; rm -f -- "$staging"; pkg_debug add.result failed; return "$status"; fi
         if [[ -e $staging ]]; then
-            if [[ -f $package/$destination && ! -L $package/$destination ]] && cmp -s -- "$staging" "$package/$destination"; then rm -f -- "$staging"; return 0; fi
-            rm -f -- "$staging"; pkg_fail "destination already exists: $destination"
+            if [[ -f $target && ! -L $target ]]; then
+                if cmp -s -- "$staging" "$target"; then
+                    rm -f -- "$staging"
+                    pkg_debug add.result already_staged
+                    return 0
+                fi
+                if [[ $force == 1 ]]; then
+                    if mv --no-copy -fT -- "$staging" "$target"; then
+                        pkg_debug add.result replaced
+                        printf 'Replaced %s: %s\n' "$type" "$destination"
+                        return 0
+                    else
+                        status=$?
+                        rm -f -- "$staging"
+                        pkg_debug add.result failed
+                        return "$status"
+                    fi
+                fi
+                rm -f -- "$staging"
+                pkg_fail "destination already exists: $destination. Use -f to replace it."
+            fi
+            rm -f -- "$staging"
+            pkg_fail "destination already exists: $destination and is not a regular file"
         fi
+        pkg_debug add.result staged
         printf 'Added %s: %s\n' "$type" "$destination"
         return
     fi

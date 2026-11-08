@@ -101,6 +101,7 @@ sign_release() {
 }
 
 expected_checksum=$1
+force=${2:-0}
 staged_archive="$probe_dir/package.deb"
 pkg_debug push.staged_archive "$staged_archive"
 cat > "$staged_archive" || fail 'could not stage the incoming archive'
@@ -115,8 +116,8 @@ flock -x -w 30 9 || fail 'could not lock the repository for publication'
 for directory in pool pool/main dists dists/trixie; do
     [[ ! -L $repository/$directory ]] || fail "unexpected repository symlink: $directory"
 done
-filename=$(prepare_metadata "$repository" "$probe_dir" "$staged_archive" 9<&-)
+filename=$(prepare_metadata "$repository" "$probe_dir" "$staged_archive" "$force" 9<&-)
 # GPG must not inherit the repository lock.
 sign_release 9<&- </dev/null
-activate_release "$filename"
+activate_release "$filename" "$force"
 printf '%s\n' "$received_checksum"

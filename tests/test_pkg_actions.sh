@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 pkg=${PKG_TEST_BINARY:?set PKG_TEST_BINARY to compiled pkg}
+root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+expected_version=$(sed -n 's/^Version: //p' "$root/packaging/pkg-cli.control")
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 cd "$work"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 reject() { if "$@" >out 2>err; then fail "unexpected success: $*"; fi; }
-[[ $($pkg version) == 0.0.0 ]] || fail version
+[[ -n $expected_version && $($pkg version) == "$expected_version" ]] || fail version
 $pkg init >/dev/null
 $pkg new alpha >/dev/null
 $pkg set Version 1.2.3 in alpha

@@ -1,8 +1,8 @@
 Package: pkg-cli
-Version: 0.0.0
+Version: 0.1.2
 Section: utils
 Priority: optional
 Architecture: all
-Maintainer: TODO <maintainer@example.invalid>
-Description: TODO package description
+Maintainer: axjab <axjab@github.com>
+Description: Simplified interface to .deb packaging and publishing
 Depends: gum (>= 2.0.2)

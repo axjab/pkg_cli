@@ -1,4 +1,5 @@
 source "$(dirname -- "${BASH_SOURCE[0]}")/categories.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/grid.sh"
 # Inspect the staged tree using Bash and standard filesystem utilities.
 pkg_inspect() (
     local package=$1 line field='' value key path category display target
@@ -99,7 +100,12 @@ pkg_inspect() (
         elif (( category == 1 )); then
             for key in depends pre-depends recommends suggests enhances breaks conflicts provides replaces; do
                 if [[ -v fields[$key] ]]; then
-                    print_line "${secondary[$category]}" "  ${key^}: ${fields[$key]}"
+                    if [[ $key == depends ]]; then
+                        pkg_dependency_grid "${fields[$key]}" 2 "${secondary[$category]}"
+                    else
+                        print_line "${secondary[$category]}" "  ${key^}:"
+                        pkg_dependency_grid "${fields[$key]}" 4 "${secondary[$category]}"
+                    fi
                     count=$((count + 1))
                 fi
             done

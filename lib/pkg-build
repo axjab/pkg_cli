@@ -2,7 +2,7 @@
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/package.sh"
 
-usage='Usage: pkg build [<package>] [to <directory>]'
+usage='Usage: pkg build [-f] [<package>] [to <directory>]'
 if [[ $# == 1 && $1 == help ]]; then
     printf '%s\n' "$usage"
     cat <<'HELP'
@@ -13,7 +13,8 @@ If several packages exist, scripts must provide a name.
 
 Archives go to dist/ at the workspace root by default. An explicit
 relative directory is resolved from the current directory.
-An existing archive with different contents is preserved.
+Use -f to replace a conflicting archive after the new build passes verification.
+Without -f, an existing archive with different contents is preserved.
 
 Example: pkg build hello to ./releases
 Debug:   pkg --debug build hello
@@ -35,6 +36,11 @@ cleanup() {
 trap cleanup EXIT
 
 pkg_debug command build
+force=false
+if [[ ${1:-} == -f ]]; then
+    force=true
+    shift
+fi
 package_args=()
 output=''
 if (( $# == 1 || $# == 3 )); then
@@ -85,13 +91,19 @@ fi
 dpkg-deb --fsys-tarfile "$archive" | tar -tf - >/dev/null
 pkg_debug build.verified true
 
-# Publish atomically without overwriting an archive, including a concurrent build.
+# Publish atomically. Only a forced build can replace a conflicting archive.
 if ln -T -- "$archive" "$destination" 2>"$staging/link-error"; then
     pkg_debug build.result built
 elif [[ ! -L $destination && -f $destination ]] && cmp -s -- "$archive" "$destination"; then
     pkg_debug build.result already_built
+elif [[ $force == true && ! -L $destination && -f $destination ]]; then
+    mv -fT -- "$archive" "$destination"
+    pkg_debug build.result replaced
 elif [[ -e $destination || -L $destination ]]; then
-    pkg_fail "archive already exists: $destination. Choose another directory with 'to <directory>'."
+    if [[ ! -L $destination && -f $destination ]]; then
+        pkg_fail "archive already exists: $destination. Use -f to replace it or 'to <directory>' to build elsewhere."
+    fi
+    pkg_fail "archive already exists: $destination. The destination is not a regular file."
 else
     cat -- "$staging/link-error" >&2
     pkg_fail "could not publish archive: $destination"

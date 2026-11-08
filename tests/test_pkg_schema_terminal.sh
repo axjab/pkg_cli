@@ -19,7 +19,7 @@ printf 'dependency\n' | NO_COLOR=1 script -qec "'$pkg' add gum to demo" /dev/nul
 grep -F 'Component category:' prompt >/dev/null
 # A package and an executable with the same name are also ambiguous.
 $pkg new gum >/dev/null
-printf 'package in gum: gum\n' | NO_COLOR=1 script -qec "'$pkg' rm gum" /dev/null > prompt
+printf '2\n' | NO_COLOR=1 script -qec "'$pkg' rm gum" /dev/null > prompt
 [[ ! -d .pkg/packages/gum && -f .pkg/packages/demo/bin/gum ]]
 # Invalid/cancelled choices must never mutate.
 if printf 'not a choice\n' | NO_COLOR=1 script -qec "'$pkg' rm gum from demo" /dev/null > prompt; then exit 1; fi

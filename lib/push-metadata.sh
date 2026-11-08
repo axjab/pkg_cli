@@ -1,9 +1,9 @@
 # Build an APT repository view beneath the private push staging directory.
 prepare_metadata() (
-    local repository=$1 stage=$2 incoming=$3
+    local repository=$1 stage=$2 incoming=$3 force=${4:-0}
     local pool_path=pool/main release_path=dists/trixie
     local index_path=main/binary-amd64
-    local package version architecture filename archive relative destination
+    local package version architecture filename archive relative destination existing_identity incoming_identity
     local records=1 index_count entry digest_line digest bytes release release_date directory previous
     local -a indexes=("$index_path/Packages" "$index_path/Packages.gz")
     export LC_ALL=C
@@ -46,8 +46,18 @@ prepare_metadata() (
     local existing_pool="$repository/$pool_path"
     destination="$existing_pool/$filename"
     if [[ -e $destination || -L $destination ]]; then
-        [[ -f $destination ]] && cmp -s -- "$incoming" "$destination" ||
-            fail "different archive already exists at $pool_path/$filename"
+        [[ -f $destination && ! -L $destination ]] ||
+            fail "invalid archive at $pool_path/$filename"
+        if ! cmp -s -- "$incoming" "$destination"; then
+            [[ $force == 1 ]] ||
+                fail "different archive already exists at $pool_path/$filename. Use pkg push -f to replace it."
+            existing_identity=$(dpkg-deb -f "$destination" Package Version Architecture) ||
+                fail "could not read the identity of $pool_path/$filename"
+            incoming_identity=$(dpkg-deb -f "$incoming" Package Version Architecture) ||
+                fail 'could not read the identity of the uploaded archive'
+            [[ $existing_identity == "$incoming_identity" ]] ||
+                fail "archive identity differs at $pool_path/$filename"
+        fi
     fi
 
     # Keep the same relative paths while indexing existing archives without copying them.

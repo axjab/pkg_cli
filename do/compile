@@ -85,7 +85,7 @@ tar_options=()
 if [[ -n ${SOURCE_DATE_EPOCH:-} ]]; then
     tar_options=(--sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner)
 fi
-tar "${tar_options[@]}" -C "$project_root" -cf - -- lib >> "$output"
+tar "${tar_options[@]}" -C "$project_root" -cf - -- lib packaging/pkg-cli.control >> "$output"
 
 chmod 755 -- "$output"
 mv -fT -- "$output" "$destination/pkg"
