@@ -1,0 +1,23 @@
+
+package:
+	name: pkg-cli
+	version: 0.0.0
+	priority:
+	arch: all
+	description: |
+		hello
+	dependencies:
+		- jq
+		- yq
+	executables: *
+	config:
+		- ./etc1:one
+		- ./etc2:two
+
+	services:
+		- ./svc1:one.service
+		- ./svc2:two.service
+
+	other:
+		- ./random/1:x/y/z
+		- ./random/2:x/y/z
