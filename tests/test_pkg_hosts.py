@@ -124,7 +124,7 @@ class HostTests(unittest.TestCase):
         self.assertEqual(self.run_pkg("add", "./hello").returncode, 0)
         result = self.run_pkg("build", "hello")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.root / "dist/hello_0.0.0_all.deb").is_file())
+        self.assertTrue((self.root / ".pkg/archives/hello_0.0.0_all.deb").is_file())
         self.assertFalse(self.log.exists())
 
     def test_duplicate_registration_is_atomic(self):

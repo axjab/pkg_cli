@@ -19,3 +19,7 @@
 .DS_Store
 
 pkg
+
+# Local Debian package build output and build lock
+/.pkg/archives/
+/.pkg/.build.lock

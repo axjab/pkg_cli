@@ -96,5 +96,5 @@ for index in 1 2 3 4; do
     $pkg rm dependency "test-dependency-$index" from alpha >/dev/null
 done
 $pkg build alpha >/dev/null
-[[ -f dist/alpha_1.2.3_all.deb ]] || fail build
+[[ -f .pkg/archives/alpha_1.2.3_all.deb ]] || fail build
 printf 'PASS: action schema, categories, metadata, ambiguity, safety, and build\n'

@@ -13,10 +13,13 @@ Build and verify a Debian package. Print the resulting archive's path.
 With no package name, use the only package or prompt in a terminal.
 If several packages exist, scripts must provide a name.
 
-Archives go to dist/ at the workspace root by default. An explicit
-relative directory is resolved from the current directory.
-Use -f to replace a conflicting archive after the new build passes verification.
-Without -f, an existing archive with different contents is preserved.
+Archives go to .pkg/archives/ by default. An explicit relative directory
+is resolved from the current directory. The last built version and archive
+digest are recorded per package and architecture under .pkg/versions/.
+A version cannot be reused with different contents or moved backwards.
+Increase Version in DEBIAN/control before building changed contents.
+Use -f only to replace a conflicting archive file; it does not bypass
+the version-history check.
 
 Example: pkg build hello to ./releases
 Debug:   pkg --debug build hello
@@ -25,11 +28,11 @@ HELP
 fi
 
 staging=''
+ledger_staging=''
 cleanup() {
     local status=$?
-    if [[ -n $staging ]]; then
-        rm -rf -- "$staging"
-    fi
+    [[ -z $staging ]] || rm -rf -- "$staging"
+    [[ -z $ledger_staging ]] || rm -f -- "$ledger_staging"
     if (( status != 0 )); then
         pkg_debug build.result failed
     fi
@@ -62,18 +65,34 @@ esac
 
 root=$(pkg_require_workspace)
 package=$(pkg_select_package "$root" 'pkg build <package>' "${package_args[@]}")
-if ! command -v dpkg-deb >/dev/null; then
-    pkg_fail 'dpkg-deb is required to build packages'
-fi
+command -v dpkg-deb >/dev/null || pkg_fail 'dpkg-deb is required to build packages'
+command -v dpkg >/dev/null || pkg_fail 'dpkg is required to compare package versions'
+command -v flock >/dev/null || pkg_fail 'flock is required to serialize package builds'
+command -v sha256sum >/dev/null || pkg_fail 'sha256sum is required to track built packages'
 
-output=$(realpath -m -- "${output:-${root%/}/dist}")
+pkg_root="${root%/}/.pkg"
+archive_root="$pkg_root/$ARCHIVES"
+[[ ! -L $pkg_root && -d $pkg_root ]] || pkg_fail 'invalid workspace .pkg directory'
+[[ ! -L $archive_root ]] || pkg_fail 'build archive directory must not be a symlink'
+output=$(realpath -m -- "${output:-$archive_root}")
 pkg_debug build.output_directory "$output"
 case $output in
-    "${root%/}/.pkg"|"${root%/}/.pkg/"*)
-        pkg_fail 'build output must be outside the managed .pkg directory'
+    "$archive_root"|"$archive_root/"*) ;;
+    "$pkg_root"|"$pkg_root/"*)
+        pkg_fail 'build output must be outside managed .pkg storage, except .pkg/archives'
         ;;
 esac
 mkdir -p -- "$output"
+
+versions_dir="$pkg_root/versions"
+if [[ -L $versions_dir || ( -e $versions_dir && ! -d $versions_dir ) ]]; then
+    pkg_fail 'invalid package version history directory'
+fi
+mkdir -p -- "$versions_dir"
+lock_file="$pkg_root/.build.lock"
+[[ ! -L $lock_file ]] || pkg_fail 'invalid package build lock'
+exec {build_lock}>"$lock_file"
+flock -x "$build_lock"
 
 # Let dpkg-deb name the archive from control metadata in a private directory.
 staging=$(mktemp -d -- "${output%/}/.build.XXXXXXXX")
@@ -87,13 +106,41 @@ destination="${output%/}/${archive##*/}"
 pkg_debug build.artifact "$destination"
 
 archive_package=$(dpkg-deb --field "$archive" Package)
+archive_version=$(dpkg-deb --field "$archive" Version)
+archive_architecture=$(dpkg-deb --field "$archive" Architecture)
 if [[ $archive_package != "${package##*/}" ]]; then
     pkg_fail "control metadata names '$archive_package', expected '${package##*/}'"
 fi
+[[ $archive_architecture =~ ^[a-z0-9][a-z0-9-]*$ ]] || pkg_fail "invalid package architecture: $archive_architecture"
+dpkg --validate-version "$archive_version" >/dev/null 2>&1 || pkg_fail "invalid Debian package version: $archive_version"
 dpkg-deb --fsys-tarfile "$archive" | tar -tf - >/dev/null
+digest_line=$(sha256sum -- "$archive")
+archive_digest=${digest_line%% *}
+[[ $archive_digest =~ ^[0-9a-f]{64}$ ]] || pkg_fail 'could not calculate archive SHA-256'
 pkg_debug build.verified true
+pkg_debug build.version "$archive_version"
+pkg_debug build.archive_sha256 "$archive_digest"
 
-# Publish atomically. Only a forced build can replace a conflicting archive.
+# A version is immutable once built: retries with identical bytes are safe,
+# but changed contents need a new Debian Version. Never move history backwards.
+ledger="$versions_dir/$archive_package.$archive_architecture"
+if [[ -e $ledger || -L $ledger ]]; then
+    [[ -f $ledger && ! -L $ledger ]] || pkg_fail "invalid version history file: $ledger"
+    last_version=''
+    last_digest=''
+    extra=''
+    IFS=' ' read -r last_version last_digest extra < "$ledger" || pkg_fail "cannot read version history: $ledger"
+    [[ -n $last_version && -z $extra && $last_digest =~ ^[0-9a-f]{64}$ ]] || pkg_fail "invalid version history file: $ledger"
+    dpkg --validate-version "$last_version" >/dev/null 2>&1 || pkg_fail "invalid version history file: $ledger"
+    if dpkg --compare-versions "$archive_version" lt "$last_version"; then
+        pkg_fail "version $archive_version is older than the last built version $last_version for $archive_package ($archive_architecture)"
+    fi
+    if dpkg --compare-versions "$archive_version" eq "$last_version" && [[ $archive_digest != "$last_digest" ]]; then
+        pkg_fail "version $archive_version was already built with different contents for $archive_package ($archive_architecture); update Version in DEBIAN/control"
+    fi
+fi
+
+# Publish atomically. Only a forced build can replace a conflicting archive file.
 if ln -T -- "$archive" "$destination" 2>"$staging/link-error"; then
     pkg_debug build.result built
 elif [[ ! -L $destination && -f $destination ]] && cmp -s -- "$archive" "$destination"; then
@@ -103,11 +150,18 @@ elif [[ $force == true && ! -L $destination && -f $destination ]]; then
     pkg_debug build.result replaced
 elif [[ -e $destination || -L $destination ]]; then
     if [[ ! -L $destination && -f $destination ]]; then
-        pkg_fail "archive already exists: $destination. Use -f to replace it or 'to <directory>' to build elsewhere."
+        pkg_fail "archive already exists: $destination. Use -f to replace the archive file or 'to <directory>' to build elsewhere."
     fi
     pkg_fail "archive already exists: $destination. The destination is not a regular file."
 else
     cat -- "$staging/link-error" >&2
     pkg_fail "could not publish archive: $destination"
 fi
+
+# Commit version history only after the archive is safely published.
+ledger_staging=$(mktemp -- "$versions_dir/.$archive_package.$archive_architecture.XXXXXXXX")
+printf '%s %s\n' "$archive_version" "$archive_digest" > "$ledger_staging"
+mv -fT -- "$ledger_staging" "$ledger"
+ledger_staging=''
+pkg_debug build.version_history "$ledger"
 printf '%s\n' "$destination"

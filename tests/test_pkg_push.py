@@ -96,7 +96,7 @@ elif '--export' in args:
         self.assertIn('signed trixie APT', result.stdout)
 
     def test_missing_archive(self):
-        next((self.root / 'dist').glob('*.deb')).unlink()
+        next((self.root / '.pkg/archives').glob('*.deb')).unlink()
         self.failed(self.call('push'), 'Run pkg build hello first')
 
     def test_ambiguous_archive(self):
@@ -189,7 +189,7 @@ elif '--export' in args:
         stage = self.root / 'metadata staging'
         stage.mkdir()
         incoming = stage / 'incoming.deb'
-        original = self.root / 'dist/hello_0.0.0_all.deb'
+        original = self.root / '.pkg/archives/hello_0.0.0_all.deb'
         shutil.copyfile(original, incoming)
         result = subprocess.run(
             ['bash', '-euc', '''
@@ -231,7 +231,7 @@ elif '--export' in args:
         pool = self.home / 'pool/main'
         pool.mkdir(parents=True)
         existing = pool / 'hello_0.0.0_all.deb'
-        original = self.root / 'dist' / existing.name
+        original = self.root / '.pkg/archives' / existing.name
         shutil.copyfile(original, existing)
         release = self.home / 'dists/trixie/Release'
         release.parent.mkdir(parents=True)
