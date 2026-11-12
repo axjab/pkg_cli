@@ -53,10 +53,10 @@ for archive in "${root%/}/.pkg/archives/${name}_"*.deb; do
     archives+=("$archive")
 done
 case ${#archives[@]} in
-    0) pkg_fail "no built archive for $name in.pkg/archives/. Run pkg build $name first." ;;
+    0) pkg_fail "no built archive for $name in .pkg/archives/. Run pkg build $name first." ;;
     1) archive=${archives[0]} ;;
     *)
-        [[ -t 0 ]] || pkg_fail "multiple built archives for $name; keep one version in.pkg/archives/ or select interactively."
+        [[ -t 0 ]] || pkg_fail "multiple built archives for $name; keep one version in .pkg/archives/ or select interactively."
         archive_names=()
         for candidate in "${archives[@]}"; do
             archive_names+=("${candidate##*/}")
