@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/package.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/progress.sh"
 
 ARCHIVES=".pkg/archives"
 
@@ -77,7 +78,7 @@ mkdir -p -- "$output"
 
 # Let dpkg-deb name the archive from control metadata in a private directory.
 staging=$(mktemp -d -- "${output%/}/.build.XXXXXXXX")
-dpkg-deb --root-owner-group --build "$package" "$staging" >/dev/null
+pkg_run_with_spinner "Building ${package##*/}" dpkg-deb --root-owner-group --build "$package" "$staging" >/dev/null
 archives=("$staging"/*.deb)
 if (( ${#archives[@]} != 1 )) || [[ ! -f ${archives[0]} ]]; then
     pkg_fail 'expected dpkg-deb to produce one archive'
