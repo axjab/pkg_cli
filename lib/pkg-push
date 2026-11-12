@@ -11,9 +11,9 @@ if [[ $# == 1 && $1 == help ]]; then
     printf '%s\n' "$usage"
     cat <<'HELP'
 
-Publish a built archive from workspace.pkg/archives/ to a signed trixie APT
+Publish a built archive from workspace .pkg/archives/ to a signed trixie APT
 repository for amd64, including architecture-independent packages.
-Build first with pkg build <package>. If several versions exist in.pkg/archives/,
+Build first with pkg build <package>. If several versions exist in .pkg/archives/,
 selection prompts in a terminal; scripts must leave one matching archive.
 Use -f to replace a published archive with the same package, version, and architecture.
 Omitted package/host choices use the sole choice or prompt in a terminal.

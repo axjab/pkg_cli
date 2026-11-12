@@ -301,7 +301,7 @@ fi
         self.failed(self.call('push','hello','to','localhost','extra'), 'Usage',2)
 
     def test_invalid_archive(self):
-        next((self.root/'dist').glob('*.deb')).write_text('bad')
+        next((self.root/'.pkg/archives').glob('*.deb')).write_text('bad')
         self.failed(self.call('push'), 'invalid archive')
 
     def test_probe_write_failure(self):

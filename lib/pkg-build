@@ -71,7 +71,7 @@ command -v flock >/dev/null || pkg_fail 'flock is required to serialize package 
 command -v sha256sum >/dev/null || pkg_fail 'sha256sum is required to track built packages'
 
 pkg_root="${root%/}/.pkg"
-archive_root="$pkg_root/$ARCHIVES"
+archive_root="${root%/}/$ARCHIVES"
 [[ ! -L $pkg_root && -d $pkg_root ]] || pkg_fail 'invalid workspace .pkg directory'
 [[ ! -L $archive_root ]] || pkg_fail 'build archive directory must not be a symlink'
 output=$(realpath -m -- "${output:-$archive_root}")
@@ -79,7 +79,7 @@ pkg_debug build.output_directory "$output"
 case $output in
     "$archive_root"|"$archive_root/"*) ;;
     "$pkg_root"|"$pkg_root/"*)
-        pkg_fail 'build output must be outside managed .pkg storage, except .pkg/archives'
+        pkg_fail 'build output must be outside the managed .pkg directory, except .pkg/archives'
         ;;
 esac
 mkdir -p -- "$output"

@@ -148,6 +148,27 @@ class BuildTests(unittest.TestCase):
         self.assertEqual([file.name for file in files], ["hello_0.0.0_all.deb"])
         subprocess.run(["dpkg-deb", "--info", files[0]], check=True, capture_output=True)
 
+    def test_version_history_requires_increasing_versions_and_tracks_digest(self):
+        self.assert_ok(self.run_pkg("create", "hello"))
+        first = self.run_pkg("build", "hello")
+        self.assert_ok(first)
+        ledger = self.root / ".pkg/versions/hello.all"
+        first_fields = ledger.read_text().split()
+        self.assertEqual(first_fields[0], "0.0.0")
+        self.assertRegex(first_fields[1], r"^[0-9a-f]{64}$")
+
+        control = self.root / ".pkg/packages/hello/DEBIAN/control"
+        control.write_text(control.read_text().replace("Version: 0.0.0", "Version: 0.0.1"))
+        second = self.run_pkg("build", "hello")
+        self.assert_ok(second)
+        self.assertEqual(ledger.read_text().split()[0], "0.0.1")
+
+        control.write_text(control.read_text().replace("Version: 0.0.1", "Version: 0.0.0"))
+        downgrade = self.run_pkg("build", "hello")
+        self.assertEqual(downgrade.returncode, 1)
+        self.assertIn("older than the last built version 0.0.1", downgrade.stderr)
+        self.assertEqual(ledger.read_text().split()[0], "0.0.1")
+
     def test_build_and_verification_failures_leave_no_partial_artifact(self):
         self.assert_ok(self.run_pkg("create", "hello"))
         tools = self.root / "tools"
