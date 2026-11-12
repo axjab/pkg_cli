@@ -52,7 +52,7 @@ class BuildTests(unittest.TestCase):
             self.stage(package, executable)
             result = self.run_pkg("build", package, cwd=cwd, debug=True)
             self.assert_ok(result)
-            artifact = self.root / "dist" / f"{package}_0.0.0_all.deb"
+            artifact = self.root / ".pkg/archives" / f"{package}_0.0.0_all.deb"
             self.assertEqual(result.stdout, f"{artifact}\n")
             expected_discovery = "ancestor" if cwd == child else "current"
             for field in (f"workspace.result={expected_discovery}", "package.selection=explicit",
@@ -66,7 +66,7 @@ class BuildTests(unittest.TestCase):
                 files = [entry for entry in archive if entry.isfile()]
                 self.assertEqual([entry.name for entry in files], [f"./bin/{executable}"])
                 self.assertEqual((files[0].uid, files[0].gid, files[0].mode), (0, 0, 0o755))
-        self.assertFalse((child / "dist").exists())
+        self.assertFalse((child / ".pkg/archives").exists())
 
     def test_inferred_package_and_relative_output(self):
         self.assert_ok(self.run_pkg("create", "hello"))
@@ -78,7 +78,7 @@ class BuildTests(unittest.TestCase):
         self.assertTrue(artifact.is_file())
         self.assertEqual(result.stdout, f"{artifact}\n")
         self.assertIn("pkg.debug.package.selection=only", result.stderr)
-        self.assertFalse((self.root / "dist").exists())
+        self.assertFalse((self.root / ".pkg/archives").exists())
 
     def test_ambiguous_package_prompts_in_a_terminal(self):
         for name in ("hello", "core"):
@@ -86,7 +86,7 @@ class BuildTests(unittest.TestCase):
         result = self.run_pkg("build")
         self.assertEqual(result.returncode, 1)
         self.assertIn("Use pkg build <package>", result.stderr)
-        self.assertFalse((self.root / "dist").exists())
+        self.assertFalse((self.root / ".pkg/archives").exists())
         master, terminal = pty.openpty()
         self.addCleanup(os.close, master)
         self.addCleanup(os.close, terminal)
@@ -94,7 +94,7 @@ class BuildTests(unittest.TestCase):
         result = self.run_pkg("build", stdin=terminal)
         self.assert_ok(result)
         self.assertIn("Available packages:\n  core\n  hello\nPackage name:", result.stderr)
-        self.assertEqual([p.name for p in (self.root / "dist").iterdir()], ["core_0.0.0_all.deb"])
+        self.assertEqual([p.name for p in (self.root / ".pkg/archives").iterdir()], ["core_0.0.0_all.deb"])
 
     def test_missing_unknown_and_invalid_arguments(self):
         for args, status, message in (
@@ -109,7 +109,7 @@ class BuildTests(unittest.TestCase):
                 self.assertEqual(result.returncode, status)
                 self.assertEqual(result.stdout, "")
                 self.assertIn(message, result.stderr)
-        self.assertFalse((self.root / "dist").exists())
+        self.assertFalse((self.root / ".pkg/archives").exists())
 
     def test_rejects_output_inside_package_storage(self):
         self.assert_ok(self.run_pkg("create", "hello"))
@@ -131,7 +131,7 @@ class BuildTests(unittest.TestCase):
         self.stage("hello", "second")
         result = self.run_pkg("build")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("archive already exists", result.stderr)
+        self.assertIn("version 0.0.0 was already built with different contents", result.stderr)
         self.assertEqual(result.stdout, "")
         self.assertEqual(artifact.read_bytes(), previous)
         self.assertEqual(list(artifact.parent.iterdir()), [artifact])
@@ -144,9 +144,30 @@ class BuildTests(unittest.TestCase):
                 ("1", "2"),
             ))
         self.assertEqual(sorted(result.returncode for result in results), [0, 1])
-        files = list((self.root / "dist").iterdir())
+        files = list((self.root / ".pkg/archives").iterdir())
         self.assertEqual([file.name for file in files], ["hello_0.0.0_all.deb"])
         subprocess.run(["dpkg-deb", "--info", files[0]], check=True, capture_output=True)
+
+    def test_version_history_requires_increasing_versions_and_tracks_digest(self):
+        self.assert_ok(self.run_pkg("create", "hello"))
+        first = self.run_pkg("build", "hello")
+        self.assert_ok(first)
+        ledger = self.root / ".pkg/versions/hello.all"
+        first_fields = ledger.read_text().split()
+        self.assertEqual(first_fields[0], "0.0.0")
+        self.assertRegex(first_fields[1], r"^[0-9a-f]{64}$")
+
+        control = self.root / ".pkg/packages/hello/DEBIAN/control"
+        control.write_text(control.read_text().replace("Version: 0.0.0", "Version: 0.0.1"))
+        second = self.run_pkg("build", "hello")
+        self.assert_ok(second)
+        self.assertEqual(ledger.read_text().split()[0], "0.0.1")
+
+        control.write_text(control.read_text().replace("Version: 0.0.1", "Version: 0.0.0"))
+        downgrade = self.run_pkg("build", "hello")
+        self.assertEqual(downgrade.returncode, 1)
+        self.assertIn("older than the last built version 0.0.1", downgrade.stderr)
+        self.assertEqual(ledger.read_text().split()[0], "0.0.1")
 
     def test_build_and_verification_failures_leave_no_partial_artifact(self):
         self.assert_ok(self.run_pkg("create", "hello"))
@@ -170,7 +191,7 @@ class BuildTests(unittest.TestCase):
                 self.assertEqual(result.returncode, expected)
                 self.assertEqual(result.stdout, "")
                 self.assertIn("pkg.debug.build.result=failed", result.stderr)
-                self.assertEqual(list((self.root / "dist").iterdir()), [])
+                self.assertEqual(list((self.root / ".pkg/archives").iterdir()), [])
 
     def test_help(self):
         result = self.run_pkg("help", "build") if BINARY else self.run_pkg("build", "help")

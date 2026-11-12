@@ -11,9 +11,9 @@ if [[ $# == 1 && $1 == help ]]; then
     printf '%s\n' "$usage"
     cat <<'HELP'
 
-Publish a built archive from workspace dist/ to a signed trixie APT
+Publish a built archive from workspace .pkg/archives/ to a signed trixie APT
 repository for amd64, including architecture-independent packages.
-Build first with pkg build <package>. If several versions exist in dist/,
+Build first with pkg build <package>. If several versions exist in .pkg/archives/,
 selection prompts in a terminal; scripts must leave one matching archive.
 Use -f to replace a published archive with the same package, version, and architecture.
 Omitted package/host choices use the sole choice or prompt in a terminal.
@@ -45,7 +45,7 @@ package=$(pkg_select_package "$root" 'pkg push <package> [to <host>]' "${package
 name=${package##*/}
 command -v dpkg-deb >/dev/null || pkg_fail 'dpkg-deb is required to check built packages'
 archives=()
-for archive in "${root%/}/dist/${name}_"*.deb; do
+for archive in "${root%/}/.pkg/archives/${name}_"*.deb; do
     [[ -e $archive || -L $archive ]] || continue
     [[ -f $archive && ! -L $archive ]] || pkg_fail "invalid archive: $archive"
     archive_name=$(dpkg-deb --field "$archive" Package) || pkg_fail "invalid archive: $archive"
@@ -53,10 +53,10 @@ for archive in "${root%/}/dist/${name}_"*.deb; do
     archives+=("$archive")
 done
 case ${#archives[@]} in
-    0) pkg_fail "no built archive for $name in dist/. Run pkg build $name first." ;;
+    0) pkg_fail "no built archive for $name in .pkg/archives/. Run pkg build $name first." ;;
     1) archive=${archives[0]} ;;
     *)
-        [[ -t 0 ]] || pkg_fail "multiple built archives for $name; keep one version in dist/ or select interactively."
+        [[ -t 0 ]] || pkg_fail "multiple built archives for $name; keep one version in .pkg/archives/ or select interactively."
         archive_names=()
         for candidate in "${archives[@]}"; do
             archive_names+=("${candidate##*/}")

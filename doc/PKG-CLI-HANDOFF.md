@@ -42,7 +42,7 @@ Suggested next maintenance checkpoint:
 - The model is intelligent, context-sensitive, and action-first. Ambiguity among packages, dependencies, executables, configuration, services, and other components prompts interactively.
 - Prefer positional words and explicit categories over new double-dash options. The requested `-f` flag is supported for add, build, and push.
 - Runtime work and new regression scripts should be Bash. Existing Python tests remain migration work; their presence is not permission to rewrite the tool in Python.
-- Package definitions and workspace state belong in `.pkg/`. Compiled output and distributable archives can live outside it. Do not create another package manifest directory.
+- Package definitions and workspace state belong in `.pkg/`. Build archives live in the ignored `.pkg/archives/` directory; compiled output can live outside it. Do not create another package manifest directory.
 - Use actual source before editing. Preserve the maintainer's metadata and local changes. Never overwrite their version or identity with placeholders from an old artifact.
 - Make routine implementation decisions without repeated approval questions. If the proposed command schema has a material contradiction, surface it before implementing an incompatible interpretation.
 - Source deliveries are ZIP overlays with checkout-relative paths and no enclosing directory. Include required helpers and executable permissions. A ZIP cannot remove a file by omission; state required deletions.
@@ -181,7 +181,7 @@ From the maintainer's checkout with package and publishing host already configur
 pkg edit                  # change Version to 0.2.2, save, exit
 do/compile               # produces ./pkg in the maintainer's current setup
 pkg add -f ./pkg           # replace staged bin/pkg
-pkg build                 # dist/pkg-cli_0.2.2_all.deb
+pkg build                 # .pkg/archives/pkg-cli_0.2.2_all.deb
 pkg push                  # select the new archive if prompted
 sudo apt update
 pkg version               # still 0.2.1 before installation
@@ -211,7 +211,7 @@ At the same time, `pkg version` printed 0.1.2 while `./pkg version` printed 0.2.
 
 Normal identical-content operations remain idempotent where supported. Normal conflicting content fails with guidance. Symlink/directory targets are rejected where regular files are required. Failed copying/build verification preserves existing content and cleans owned temporary files. Copy failures retain their underlying status and debug events.
 
-Push selects an existing archive in dist; it does not build implicitly. Multiple versions prompt in a terminal and fail noninteractively. Inspect current behavior before assuming it automatically selects the highest version. A host is inferred only when unambiguous. Literal localhost uses local execution.
+Push selects an existing archive in `.pkg/archives/`; it does not build implicitly. Multiple versions prompt in a terminal and fail noninteractively. Inspect current behavior before assuming it automatically selects the highest version. A host is inferred only when unambiguous. Literal localhost uses local execution.
 
 The inspected force publisher serializes checksum and force arguments through both local and SSH execution paths, locks publication, stages and verifies metadata/signatures, and exchanges prepared files/directories. A same-name archive replacement retains the old archive for rollback if suite activation fails. A commit marker distinguishes successful activation. Rollback failure preserves recovery material and emits guidance. GNU mv exchange support is required by this implementation; verify target compatibility before changing deployment assumptions.
 
