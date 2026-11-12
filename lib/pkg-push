@@ -3,6 +3,7 @@ set -euo pipefail
 lib=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$lib/package.sh"
 source "$lib/hosts.sh"
+source "$lib/progress.sh"
 # Keep redirected diagnostics plain, including the shared debug helper.
 [[ -t 2 ]] || export NO_COLOR=1
 source "$lib/push-output.sh"
@@ -104,7 +105,7 @@ else
     printf -v remote_command "bash -c '%s' pkg-push '%s' '%s'" "${remote_script//\'/\'\\\'\'}" "$checksum" "$force"
     transport=(ssh -T -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 -o ClearAllForwardings=yes -- "$host" "$remote_command")
 fi
-if received_checksum=$("${transport[@]}" < "$archive"); then
+if received_checksum=$(pkg_run_with_spinner "Publishing ${archive##*/} to $host" "${transport[@]}" < "$archive"); then
     [[ $received_checksum == "$checksum" ]] || pkg_fail "no matching publication acknowledgement from $host"
     pkg_push_result 32 "Published ${archive##*/} to $host (trixie/amd64)"
 else
